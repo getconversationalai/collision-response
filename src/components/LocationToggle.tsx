@@ -11,11 +11,13 @@ type LocationToggleProps = {
     county: string
     is_subscribed: boolean
   }
+  onToggle?: (newState: boolean) => void
 }
 
 export default function LocationToggle({
   companyId,
   municipality,
+  onToggle,
 }: LocationToggleProps) {
   const [isSubscribed, setIsSubscribed] = useState(municipality.is_subscribed)
   const [isPending, setIsPending] = useState(false)
@@ -27,6 +29,7 @@ export default function LocationToggle({
     const previous = isSubscribed
     const next = !isSubscribed
     setIsSubscribed(next)
+    onToggle?.(next)
     setJustToggled(true)
     setTimeout(() => setJustToggled(false), 600)
 
@@ -58,6 +61,7 @@ export default function LocationToggle({
 
     if (error) {
       setIsSubscribed(previous)
+      onToggle?.(previous)
     }
 
     setIsPending(false)

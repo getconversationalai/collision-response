@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   Users,
   UserPlus,
+  MapPin,
   Shield,
   Menu,
   X,
@@ -16,6 +17,7 @@ const navItems = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/admin/clients', label: 'Clients', icon: Users },
   { href: '/admin/clients/new', label: 'Add Client', icon: UserPlus },
+  { href: '/admin/municipalities', label: 'Municipalities', icon: MapPin },
 ]
 
 export default function AdminSidebar() {

@@ -360,3 +360,93 @@ export async function resetClientPassword(companyId: string, newPassword: string
   if (error) throw new Error(`Failed to reset password: ${error.message}`)
   return { success: true }
 }
+
+// ---------------------------------------------------------------------------
+// Municipality CRUD
+// ---------------------------------------------------------------------------
+
+export async function getAllMunicipalities(): Promise<Municipality[]> {
+  await requireAdmin()
+  const admin = getAdminClient()
+  const { data, error } = await admin
+    .from('municipalities')
+    .select('*')
+    .order('name')
+  if (error) throw new Error(error.message)
+  return (data ?? []) as Municipality[]
+}
+
+export async function getMunicipalityById(id: string): Promise<Municipality> {
+  await requireAdmin()
+  const admin = getAdminClient()
+  const { data, error } = await admin
+    .from('municipalities')
+    .select('*')
+    .eq('id', id)
+    .single()
+  if (error) throw new Error(error.message)
+  return data as unknown as Municipality
+}
+
+export async function createMunicipality(input: {
+  name: string
+  county?: string
+  state?: string
+}): Promise<Municipality> {
+  await requireAdmin()
+  const admin = getAdminClient()
+
+  if (!input.name.trim()) throw new Error('Municipality name is required')
+
+  const { data, error } = await admin
+    .from('municipalities')
+    .insert({
+      name: input.name.trim(),
+      county: (input.county?.trim() || 'Orange'),
+      state: (input.state?.trim() || 'NY'),
+      is_active: true,
+    })
+    .select()
+    .single()
+
+  if (error) throw new Error(error.message)
+  return data as unknown as Municipality
+}
+
+export async function updateMunicipality(
+  id: string,
+  updates: { name?: string; county?: string; state?: string }
+) {
+  await requireAdmin()
+  const admin = getAdminClient()
+
+  if (updates.name !== undefined && !updates.name.trim()) {
+    throw new Error('Municipality name cannot be empty')
+  }
+
+  const cleanUpdates: Record<string, string> = {}
+  if (updates.name) cleanUpdates.name = updates.name.trim()
+  if (updates.county) cleanUpdates.county = updates.county.trim()
+  if (updates.state) cleanUpdates.state = updates.state.trim()
+
+  const { error } = await admin
+    .from('municipalities')
+    .update(cleanUpdates)
+    .eq('id', id)
+
+  if (error) throw new Error(error.message)
+  return { success: true }
+}
+
+export async function toggleMunicipalityActive(id: string, isActive: boolean) {
+  await requireAdmin()
+  const admin = getAdminClient()
+
+  const { error } = await admin
+    .from('municipalities')
+    .update({ is_active: isActive })
+    .eq('id', id)
+
+  if (error) throw new Error(error.message)
+  return { success: true }
+}
