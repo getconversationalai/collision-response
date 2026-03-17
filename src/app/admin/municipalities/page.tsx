@@ -1,3 +1,5 @@
+export const runtime = 'edge'
+
 import { getAllMunicipalities } from '@/lib/actions/admin-actions'
 import MunicipalityTable from '@/components/admin/MunicipalityTable'
 import Link from 'next/link'

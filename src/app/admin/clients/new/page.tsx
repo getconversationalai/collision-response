@@ -1,3 +1,5 @@
+export const runtime = 'edge'
+
 import ClientForm from '@/components/admin/ClientForm'
 
 export default function NewClientPage() {
