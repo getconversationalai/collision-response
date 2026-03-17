@@ -1,5 +1,3 @@
-export const runtime = 'edge'
-
 import { getDashboardStats } from '@/lib/actions/admin-actions'
 import type { RecentClient } from '@/lib/actions/admin-actions'
 import StatsCard from '@/components/admin/StatsCard'

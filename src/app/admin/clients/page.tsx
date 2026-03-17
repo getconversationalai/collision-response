@@ -1,5 +1,3 @@
-export const runtime = 'edge'
-
 import { getClients } from '@/lib/actions/admin-actions'
 import ClientTable from '@/components/admin/ClientTable'
 import Link from 'next/link'

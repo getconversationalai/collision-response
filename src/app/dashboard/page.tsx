@@ -1,5 +1,3 @@
-export const runtime = 'edge'
-
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import type { CollisionCompany, Municipality, Subscription } from '@/lib/types'
@@ -8,7 +6,7 @@ import PhoneEditor from '@/components/PhoneEditor'
 import LocationsSection from '@/components/LocationsSection'
 
 export default async function DashboardPage() {
-  const supabase = createClient()
+  const supabase = await createClient()
 
   const {
     data: { user },

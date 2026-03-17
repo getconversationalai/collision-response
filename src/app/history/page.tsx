@@ -1,5 +1,3 @@
-export const runtime = 'edge'
-
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import Header from '@/components/Header'
@@ -10,9 +8,9 @@ const PAGE_SIZE = 20
 export default async function HistoryPage({
   searchParams,
 }: {
-  searchParams: { page?: string }
+  searchParams: Promise<{ page?: string }>
 }) {
-  const supabase = createClient()
+  const supabase = await createClient()
 
   const {
     data: { user },
@@ -32,7 +30,8 @@ export default async function HistoryPage({
     redirect('/dashboard')
   }
 
-  const page = Math.max(1, Number(searchParams?.page) || 1)
+  const { page: pageParam } = await searchParams
+  const page = Math.max(1, Number(pageParam) || 1)
   const from = (page - 1) * PAGE_SIZE
   const to = from + PAGE_SIZE - 1
 
