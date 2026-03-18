@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard,
   Users,
@@ -10,8 +10,10 @@ import {
   Shield,
   Menu,
   X,
+  LogOut,
 } from 'lucide-react'
 import { useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
 
 const navItems = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
@@ -22,7 +24,15 @@ const navItems = [
 
 export default function AdminSidebar() {
   const pathname = usePathname()
+  const router = useRouter()
   const [mobileOpen, setMobileOpen] = useState(false)
+
+  async function handleLogout() {
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    router.push('/login')
+    router.refresh()
+  }
 
   function isActive(href: string) {
     if (href === '/admin') return pathname === '/admin'
@@ -126,7 +136,7 @@ export default function AdminSidebar() {
         </nav>
 
         {/* Footer */}
-        <div className="px-5 py-5 border-t border-navy-100/40">
+        <div className="px-5 py-5 border-t border-navy-100/40 space-y-3">
           <Link
             href="/dashboard"
             className="flex items-center gap-2 text-xs text-navy-400 hover:text-navy-600 transition-colors font-medium"
@@ -136,6 +146,13 @@ export default function AdminSidebar() {
             </svg>
             Back to Client Portal
           </Link>
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-2 text-xs text-navy-400 hover:text-red-600 transition-colors font-medium w-full"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            Log out
+          </button>
         </div>
       </aside>
     </>

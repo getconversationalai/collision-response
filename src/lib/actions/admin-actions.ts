@@ -284,6 +284,25 @@ export async function updateClient(
     throw new Error('Invalid email format')
   }
 
+  // If the email is changing, also update it in Supabase Auth so login works
+  if (updates.email) {
+    const { data: companyRow, error: lookupError } = await admin
+      .from('collision_companies')
+      .select('auth_user_id')
+      .eq('id', companyId)
+      .single()
+
+    if (lookupError || !companyRow) throw new Error('Company not found')
+
+    const { auth_user_id } = companyRow as unknown as { auth_user_id: string }
+    const { error: authError } = await admin.auth.admin.updateUserById(auth_user_id, {
+      email: updates.email,
+      email_confirm: true,
+    })
+
+    if (authError) throw new Error(`Failed to update auth email: ${authError.message}`)
+  }
+
   const { error } = await admin
     .from('collision_companies')
     .update(updates)

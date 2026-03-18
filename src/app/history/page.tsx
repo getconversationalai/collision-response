@@ -35,6 +35,8 @@ export default async function HistoryPage({
   const from = (page - 1) * PAGE_SIZE
   const to = from + PAGE_SIZE - 1
 
+  const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+
   const { data: logs, count } = await supabase
     .from('sms_log')
     .select(
@@ -52,6 +54,7 @@ export default async function HistoryPage({
       { count: 'exact' }
     )
     .eq('company_id', company.id)
+    .gte('created_at', twentyFourHoursAgo)
     .order('created_at', { ascending: false })
     .range(from, to)
 

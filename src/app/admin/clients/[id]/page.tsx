@@ -85,7 +85,9 @@ export default function ClientDetailPage() {
 
   // Password reset
   const [showPasswordReset, setShowPasswordReset] = useState(false)
+  const [passwordMode, setPasswordMode] = useState<'choose' | 'generated' | 'custom'>('choose')
   const [newPassword, setNewPassword] = useState('')
+  const [customPassword, setCustomPassword] = useState('')
   const [showNewPassword, setShowNewPassword] = useState(false)
   const [passwordCopied, setPasswordCopied] = useState(false)
   const [resettingPassword, setResettingPassword] = useState(false)
@@ -150,10 +152,13 @@ export default function ClientDetailPage() {
     }
   }
 
-  async function handlePasswordReset() {
+  async function handlePasswordReset(passwordOverride?: string) {
+    const pw = passwordOverride ?? newPassword
+    if (pw.length < 8) return
     setResettingPassword(true)
     try {
-      await resetClientPassword(companyId, newPassword)
+      await resetClientPassword(companyId, pw)
+      setNewPassword(pw)
       setPasswordResetDone(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Password reset failed')
@@ -410,11 +415,13 @@ export default function ClientDetailPage() {
             {!showPasswordReset ? (
               <button
                 onClick={() => {
-                  const pw = generatePassword()
-                  setNewPassword(pw)
                   setShowPasswordReset(true)
+                  setPasswordMode('choose')
                   setPasswordResetDone(false)
                   setPasswordCopied(false)
+                  setNewPassword('')
+                  setCustomPassword('')
+                  setShowNewPassword(false)
                 }}
                 className="btn-secondary w-full flex items-center justify-center gap-2"
               >
@@ -429,7 +436,7 @@ export default function ClientDetailPage() {
                 </div>
                 <div className="flex items-center justify-between bg-navy-50/50 rounded-xl px-3 py-2.5">
                   <span className="text-sm font-mono font-semibold text-navy-800 truncate">
-                    {showNewPassword ? newPassword : '•'.repeat(12)}
+                    {showNewPassword ? newPassword : '•'.repeat(newPassword.length)}
                   </span>
                   <div className="flex items-center gap-1 shrink-0">
                     <button
@@ -460,11 +467,96 @@ export default function ClientDetailPage() {
                   Done
                 </button>
               </div>
+            ) : passwordMode === 'choose' ? (
+              <div className="space-y-2 animate-fade-in">
+                <p className="text-xs text-navy-500 mb-3">Choose how to set the new password:</p>
+                <button
+                  onClick={() => {
+                    const pw = generatePassword()
+                    setNewPassword(pw)
+                    setPasswordMode('generated')
+                  }}
+                  className="w-full flex items-center gap-3 p-3 rounded-xl border border-navy-200/40 bg-white/40 hover:bg-brand-50/50 hover:border-brand-200/60 transition-all duration-300 text-left"
+                >
+                  <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-brand-50 text-brand-500 shrink-0">
+                    <RefreshCw className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-sm font-semibold text-navy-700 block">Generate Password</span>
+                    <span className="text-[11px] text-navy-400">Auto-generate a secure password</span>
+                  </div>
+                </button>
+                <button
+                  onClick={() => setPasswordMode('custom')}
+                  className="w-full flex items-center gap-3 p-3 rounded-xl border border-navy-200/40 bg-white/40 hover:bg-brand-50/50 hover:border-brand-200/60 transition-all duration-300 text-left"
+                >
+                  <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-navy-50 text-navy-500 shrink-0">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125" />
+                    </svg>
+                  </div>
+                  <div>
+                    <span className="text-sm font-semibold text-navy-700 block">Custom Password</span>
+                    <span className="text-[11px] text-navy-400">Enter a specific password</span>
+                  </div>
+                </button>
+                <button
+                  onClick={() => setShowPasswordReset(false)}
+                  className="text-xs text-navy-400 hover:text-navy-600 font-medium transition-colors mt-1"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : passwordMode === 'custom' ? (
+              <div className="space-y-3 animate-fade-in">
+                <div>
+                  <label className="block text-xs font-semibold text-navy-600 mb-1.5">Enter new password</label>
+                  <div className="relative">
+                    <input
+                      type={showNewPassword ? 'text' : 'password'}
+                      value={customPassword}
+                      onChange={(e) => setCustomPassword(e.target.value)}
+                      placeholder="Min. 8 characters"
+                      className="input-field pr-10 text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword(!showNewPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded text-navy-400 hover:text-navy-600 transition-colors"
+                    >
+                      {showNewPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                  {customPassword.length > 0 && customPassword.length < 8 && (
+                    <p className="text-[11px] text-red-500 mt-1">Password must be at least 8 characters</p>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handlePasswordReset(customPassword)}
+                    disabled={resettingPassword || customPassword.length < 8}
+                    className="btn-primary flex-1 flex items-center justify-center gap-1.5 text-sm py-2 disabled:opacity-50"
+                  >
+                    {resettingPassword ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                    Confirm
+                  </button>
+                  <button
+                    onClick={() => {
+                      setPasswordMode('choose')
+                      setCustomPassword('')
+                      setShowNewPassword(false)
+                    }}
+                    className="btn-secondary flex-1 text-sm py-2"
+                  >
+                    Back
+                  </button>
+                </div>
+              </div>
             ) : (
               <div className="space-y-3 animate-fade-in">
                 <div className="flex items-center justify-between bg-navy-50/50 rounded-xl px-3 py-2.5">
                   <span className="text-sm font-mono font-semibold text-navy-800 truncate">
-                    {showNewPassword ? newPassword : '•'.repeat(12)}
+                    {showNewPassword ? newPassword : '•'.repeat(newPassword.length)}
                   </span>
                   <div className="flex items-center gap-1 shrink-0">
                     <button
@@ -487,7 +579,7 @@ export default function ClientDetailPage() {
                 </div>
                 <div className="flex gap-2">
                   <button
-                    onClick={handlePasswordReset}
+                    onClick={() => handlePasswordReset()}
                     disabled={resettingPassword}
                     className="btn-primary flex-1 flex items-center justify-center gap-1.5 text-sm py-2"
                   >
@@ -495,10 +587,13 @@ export default function ClientDetailPage() {
                     Confirm
                   </button>
                   <button
-                    onClick={() => setShowPasswordReset(false)}
+                    onClick={() => {
+                      setPasswordMode('choose')
+                      setShowNewPassword(false)
+                    }}
                     className="btn-secondary flex-1 text-sm py-2"
                   >
-                    Cancel
+                    Back
                   </button>
                 </div>
               </div>

@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import LocationToggle from './LocationToggle'
 
 type Location = {
@@ -15,7 +16,7 @@ type Location = {
 
 export default function LocationsSection({
   companyId,
-  locations,
+  locations: initialLocations,
   initialActiveCount,
   children,
 }: {
@@ -25,10 +26,44 @@ export default function LocationsSection({
   children?: React.ReactNode
 }) {
   const [activeCount, setActiveCount] = useState(initialActiveCount)
+  const [locations, setLocations] = useState(initialLocations)
+  const [bulkPending, setBulkPending] = useState(false)
+  const [toggleKey, setToggleKey] = useState(0)
+
+  const allSelected = activeCount === locations.length
+  const noneSelected = activeCount === 0
 
   function handleToggle(newState: boolean) {
     setActiveCount((prev) => newState ? prev + 1 : prev - 1)
   }
+
+  const handleBulkToggle = useCallback(async () => {
+    if (bulkPending) return
+    setBulkPending(true)
+
+    const subscribeAll = !allSelected
+    const supabase = createClient()
+
+    const upserts = locations.map((loc) => ({
+      company_id: companyId,
+      municipality_id: loc.id,
+      is_subscribed: subscribeAll,
+    }))
+
+    const { error } = await supabase
+      .from('subscriptions')
+      .upsert(upserts, { onConflict: 'company_id,municipality_id' })
+
+    if (!error) {
+      setLocations((prev) =>
+        prev.map((loc) => ({ ...loc, is_subscribed: subscribeAll }))
+      )
+      setActiveCount(subscribeAll ? locations.length : 0)
+      setToggleKey((k) => k + 1)
+    }
+
+    setBulkPending(false)
+  }, [bulkPending, allSelected, locations, companyId])
 
   return (
     <>
@@ -76,7 +111,32 @@ export default function LocationsSection({
             </div>
             <h2 className="section-title">Location Subscriptions</h2>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleBulkToggle}
+              disabled={bulkPending}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-300 ${
+                allSelected
+                  ? 'bg-navy-100/80 text-navy-600 hover:bg-navy-200/80 border border-navy-200/50'
+                  : 'bg-brand-50 text-brand-600 hover:bg-brand-100 border border-brand-100'
+              } ${bulkPending ? 'opacity-60 cursor-not-allowed' : ''}`}
+            >
+              {bulkPending ? (
+                <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              ) : allSelected ? (
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                </svg>
+              ) : (
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                </svg>
+              )}
+              {allSelected ? 'Deselect All' : 'Select All'}
+            </button>
             <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-brand-50 text-brand-600 border border-brand-100 transition-all duration-300">
               {activeCount} / {locations.length}
             </span>
@@ -86,7 +146,7 @@ export default function LocationsSection({
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {locations.map((location, i) => (
             <div
-              key={location.id}
+              key={`${location.id}-${toggleKey}`}
               className="animate-fade-in-up"
               style={{ animationDelay: `${0.05 * (i + 1) + 0.2}s`, animationFillMode: 'both' }}
             >
