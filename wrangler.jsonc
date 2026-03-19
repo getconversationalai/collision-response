@@ -5,5 +5,8 @@
   "compatibility_flags": ["nodejs_compat"],
   "assets": {
     "directory": ".open-next/assets"
+  },
+  "vars": {
+    "ADMIN_USER_IDS": "e3e4fc6f-ff29-42c5-a74b-5f75595ba191,9a14aa2c-75d1-4931-94eb-a883dd85ca34,b9f8537c-168e-44d5-ab4c-4168a5feff9d"
   }
 }
