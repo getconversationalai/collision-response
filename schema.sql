@@ -121,6 +121,20 @@ CREATE POLICY "Municipalities are readable by all authenticated"
   ON municipalities FOR SELECT
   USING (auth.role() = 'authenticated');
 
+-- SMS log & dispatch log — clients can read their own notifications
+ALTER TABLE sms_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE dispatch_log ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Companies can view own SMS logs"
+  ON sms_log FOR SELECT
+  USING (company_id IN (
+    SELECT id FROM collision_companies WHERE auth_user_id = auth.uid()
+  ));
+
+CREATE POLICY "Dispatch logs readable by authenticated users"
+  ON dispatch_log FOR SELECT
+  USING (auth.role() = 'authenticated');
+
 -- ============================================================
 -- SERVICE ROLE ACCESS (for n8n workflow / API calls)
 -- n8n will use the Supabase service_role key, which bypasses RLS.

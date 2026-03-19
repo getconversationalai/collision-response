@@ -1,13 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search, MapPin, ChevronRight } from 'lucide-react'
+import { Search, MapPin, ChevronRight, ChevronUp, ChevronDown, Filter } from 'lucide-react'
 import type { Municipality } from '@/lib/types'
 
 type MunicipalityTableProps = {
   municipalities: Municipality[]
 }
+
+type SortKey = 'name' | 'county' | 'state' | 'is_active' | 'created_at'
+type SortDir = 'asc' | 'desc'
+type StatusFilter = 'all' | 'active' | 'inactive'
 
 function formatDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString('en-US', {
@@ -17,43 +21,114 @@ function formatDate(dateStr: string) {
   })
 }
 
+function SortIcon({ column, sortKey, sortDir }: { column: SortKey; sortKey: SortKey; sortDir: SortDir }) {
+  if (column !== sortKey) {
+    return <ChevronDown className="w-3 h-3 text-navy-300 opacity-0 group-hover:opacity-100 transition-opacity" />
+  }
+  return sortDir === 'asc'
+    ? <ChevronUp className="w-3 h-3 text-brand-500" />
+    : <ChevronDown className="w-3 h-3 text-brand-500" />
+}
+
 export default function MunicipalityTable({ municipalities }: MunicipalityTableProps) {
   const [search, setSearch] = useState('')
+  const [sortKey, setSortKey] = useState<SortKey>('name')
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const router = useRouter()
 
-  const filtered = municipalities.filter(m => {
-    const q = search.toLowerCase()
-    return (
-      m.name.toLowerCase().includes(q) ||
-      m.county.toLowerCase().includes(q) ||
-      m.state.toLowerCase().includes(q)
-    )
-  })
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortKey(key)
+      setSortDir('asc')
+    }
+  }
+
+  const result = useMemo(() => {
+    let list = municipalities
+
+    // Status filter
+    if (statusFilter === 'active') list = list.filter(m => m.is_active)
+    else if (statusFilter === 'inactive') list = list.filter(m => !m.is_active)
+
+    // Search
+    if (search) {
+      const q = search.toLowerCase()
+      list = list.filter(m =>
+        m.name.toLowerCase().includes(q) ||
+        m.county.toLowerCase().includes(q) ||
+        m.state.toLowerCase().includes(q)
+      )
+    }
+
+    // Sort
+    const sorted = [...list].sort((a, b) => {
+      let cmp = 0
+      switch (sortKey) {
+        case 'name':
+          cmp = a.name.localeCompare(b.name)
+          break
+        case 'county':
+          cmp = a.county.localeCompare(b.county)
+          break
+        case 'state':
+          cmp = a.state.localeCompare(b.state)
+          break
+        case 'is_active':
+          cmp = Number(b.is_active) - Number(a.is_active)
+          break
+        case 'created_at':
+          cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+          break
+      }
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+
+    return sorted
+  }, [municipalities, search, sortKey, sortDir, statusFilter])
+
+  const thClass = 'text-left px-5 py-3 section-title cursor-pointer select-none group'
 
   return (
     <div>
-      {/* Search */}
-      <div className="relative mb-6 animate-fade-in-up" style={{ animationFillMode: 'both' }}>
-        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-navy-400" />
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by name, county, or state..."
-          className="input-field pl-10"
-        />
+      {/* Search & filters */}
+      <div className="flex flex-col sm:flex-row gap-3 mb-6 animate-fade-in-up" style={{ animationFillMode: 'both' }}>
+        <div className="relative flex-1">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-navy-400" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by name, county, or state..."
+            className="input-field pl-10"
+          />
+        </div>
+        <div className="relative">
+          <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-navy-400 pointer-events-none" />
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+            className="input-field pl-9 pr-8 appearance-none cursor-pointer min-w-[140px]"
+          >
+            <option value="all">All Status</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        </div>
       </div>
 
-      {filtered.length === 0 ? (
+      {result.length === 0 ? (
         <div className="text-center py-16 animate-fade-in">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-navy-50 mb-4">
             <MapPin className="w-8 h-8 text-navy-300" />
           </div>
           <p className="text-navy-500 font-medium">
-            {search ? 'No municipalities match your search' : 'No municipalities yet'}
+            {search || statusFilter !== 'all' ? 'No municipalities match your filters' : 'No municipalities yet'}
           </p>
           <p className="text-sm text-navy-400 mt-1">
-            {search ? 'Try a different search term' : 'Add your first municipality to get started'}
+            {search || statusFilter !== 'all' ? 'Try adjusting your search or filters' : 'Add your first municipality to get started'}
           </p>
         </div>
       ) : (
@@ -63,16 +138,26 @@ export default function MunicipalityTable({ municipalities }: MunicipalityTableP
             <table className="w-full">
               <thead>
                 <tr className="border-b border-navy-100/50">
-                  <th className="text-left px-5 py-3 section-title">Name</th>
-                  <th className="text-left px-5 py-3 section-title">County</th>
-                  <th className="text-left px-5 py-3 section-title">State</th>
-                  <th className="text-center px-5 py-3 section-title">Status</th>
-                  <th className="text-left px-5 py-3 section-title hidden lg:table-cell">Created</th>
+                  <th className={thClass} onClick={() => toggleSort('name')}>
+                    <span className="inline-flex items-center gap-1">Name <SortIcon column="name" sortKey={sortKey} sortDir={sortDir} /></span>
+                  </th>
+                  <th className={thClass} onClick={() => toggleSort('county')}>
+                    <span className="inline-flex items-center gap-1">County <SortIcon column="county" sortKey={sortKey} sortDir={sortDir} /></span>
+                  </th>
+                  <th className={thClass} onClick={() => toggleSort('state')}>
+                    <span className="inline-flex items-center gap-1">State <SortIcon column="state" sortKey={sortKey} sortDir={sortDir} /></span>
+                  </th>
+                  <th className="text-center px-5 py-3 section-title cursor-pointer select-none group" onClick={() => toggleSort('is_active')}>
+                    <span className="inline-flex items-center gap-1">Status <SortIcon column="is_active" sortKey={sortKey} sortDir={sortDir} /></span>
+                  </th>
+                  <th className={`${thClass} hidden lg:table-cell`} onClick={() => toggleSort('created_at')}>
+                    <span className="inline-flex items-center gap-1">Created <SortIcon column="created_at" sortKey={sortKey} sortDir={sortDir} /></span>
+                  </th>
                   <th className="w-10"></th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((mun, i) => (
+                {result.map((mun, i) => (
                   <tr
                     key={mun.id}
                     onClick={() => router.push(`/admin/municipalities/${mun.id}`)}
@@ -113,7 +198,7 @@ export default function MunicipalityTable({ municipalities }: MunicipalityTableP
 
           {/* Mobile cards */}
           <div className="md:hidden space-y-3">
-            {filtered.map((mun, i) => (
+            {result.map((mun, i) => (
               <div
                 key={mun.id}
                 onClick={() => router.push(`/admin/municipalities/${mun.id}`)}

@@ -1,15 +1,5 @@
 'use client'
 
-import { useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
-
-function toE164(raw: string): string | null {
-  const digits = raw.replace(/[^\d]/g, '')
-  if (digits.length === 10) return `+1${digits}`
-  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`
-  return null
-}
-
 function formatPhone(e164: string): string {
   const match = e164.match(/^\+1(\d{3})(\d{3})(\d{4})$/)
   if (match) return `(${match[1]}) ${match[2]}-${match[3]}`
@@ -17,60 +7,11 @@ function formatPhone(e164: string): string {
 }
 
 export default function PhoneEditor({
-  companyId,
   initialPhone,
 }: {
   companyId: string
   initialPhone: string | null
 }) {
-  const [phone, setPhone] = useState(initialPhone ?? '')
-  const [inputValue, setInputValue] = useState('')
-  const [editing, setEditing] = useState(false)
-  const [error, setError] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
-
-  function startEditing() {
-    setInputValue(phone.startsWith('+1') ? phone.slice(2) : phone)
-    setEditing(true)
-    setError('')
-    setSaved(false)
-  }
-
-  function cancel() {
-    setEditing(false)
-    setError('')
-  }
-
-  async function save() {
-    const e164 = toE164(inputValue)
-    if (!e164) {
-      setError('Enter a valid 10-digit US phone number.')
-      return
-    }
-
-    setSaving(true)
-    setError('')
-
-    const supabase = createClient()
-    const { error: updateError } = await supabase
-      .from('collision_companies')
-      .update({ phone: e164 })
-      .eq('id', companyId)
-
-    setSaving(false)
-
-    if (updateError) {
-      setError('Failed to save. Please try again.')
-      return
-    }
-
-    setPhone(e164)
-    setEditing(false)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 3000)
-  }
-
   return (
     <div className="glass-card-rich rounded-2xl p-5 sm:p-6 card-lift">
       <div className="flex items-center gap-3 mb-4">
@@ -85,72 +26,9 @@ export default function PhoneEditor({
         </div>
       </div>
 
-      {!editing ? (
-        <div className="flex items-center gap-4 flex-wrap">
-          <span className="text-xl font-bold text-navy-900 tracking-tight">
-            {phone ? formatPhone(phone) : 'Not set'}
-          </span>
-          <button
-            onClick={startEditing}
-            className="inline-flex items-center gap-2 px-3.5 py-1.5 text-sm text-brand-600 hover:text-brand-700 font-semibold bg-brand-50/80 hover:bg-brand-100/80 rounded-lg transition-all duration-300 hover:shadow-sm"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
-            </svg>
-            Edit
-          </button>
-          {saved && (
-            <span className="animate-bounce-soft inline-flex items-center gap-1.5 text-sm text-emerald-600 font-bold bg-emerald-50 px-3 py-1 rounded-full">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-              </svg>
-              Saved
-            </span>
-          )}
-        </div>
-      ) : (
-        <div className="animate-fade-in space-y-4">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-bold text-navy-400 select-none bg-navy-50 px-2.5 py-2.5 rounded-l-xl border border-r-0 border-navy-200/60">+1</span>
-            <input
-              type="tel"
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              placeholder="2125551234"
-              className="input-field max-w-xs !rounded-l-none"
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') save()
-                if (e.key === 'Escape') cancel()
-              }}
-            />
-          </div>
-          {error && (
-            <p className="animate-fade-in-down text-sm text-red-600 font-medium flex items-center gap-2 bg-red-50 px-3 py-2 rounded-lg border border-red-100">
-              <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
-              </svg>
-              {error}
-            </p>
-          )}
-          <div className="flex gap-2">
-            <button onClick={save} disabled={saving} className="btn-primary">
-              {saving ? (
-                <span className="flex items-center gap-2">
-                  <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
-                  Saving...
-                </span>
-              ) : 'Save number'}
-            </button>
-            <button onClick={cancel} disabled={saving} className="btn-secondary">
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
+      <span className="text-xl font-bold text-navy-900 tracking-tight">
+        {initialPhone ? formatPhone(initialPhone) : 'Not set'}
+      </span>
     </div>
   )
 }
