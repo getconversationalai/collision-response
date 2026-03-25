@@ -352,6 +352,38 @@ export async function updateSubscription(
   return { success: true }
 }
 
+export async function toggleAllSubscriptions(
+  companyId: string,
+  isSubscribed: boolean
+) {
+  await requireAdmin()
+  const admin = getAdminClient()
+
+  // Get all active municipalities
+  const { data: municipalities, error: munError } = await admin
+    .from('municipalities')
+    .select('id')
+    .eq('is_active', true)
+
+  if (munError) throw new Error(munError.message)
+
+  // Upsert a subscription row for every active municipality
+  const rows = (municipalities ?? []).map((m: { id: string }) => ({
+    company_id: companyId,
+    municipality_id: m.id,
+    is_subscribed: isSubscribed,
+  }))
+
+  if (rows.length === 0) return { success: true }
+
+  const { error } = await admin
+    .from('subscriptions')
+    .upsert(rows, { onConflict: 'company_id,municipality_id' })
+
+  if (error) throw new Error(error.message)
+  return { success: true }
+}
+
 // ---------------------------------------------------------------------------
 // Password reset
 // ---------------------------------------------------------------------------

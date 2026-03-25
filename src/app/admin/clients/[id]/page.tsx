@@ -18,6 +18,8 @@ import {
   EyeOff,
   MapPin,
   Power,
+  Pause,
+  Play,
   X,
 } from 'lucide-react'
 import {
@@ -27,6 +29,7 @@ import {
   resetClientPassword,
   getMunicipalities,
   updateSubscription,
+  toggleAllSubscriptions,
 } from '@/lib/actions/admin-actions'
 import type { ClientDetail } from '@/lib/actions/admin-actions'
 import type { Municipality } from '@/lib/types'
@@ -167,6 +170,8 @@ export default function ClientDetailPage() {
     }
   }
 
+  const [togglingAll, setTogglingAll] = useState(false)
+
   async function handleSubscriptionToggle(municipalityId: string, currentlySubscribed: boolean) {
     try {
       await updateSubscription(companyId, municipalityId, !currentlySubscribed)
@@ -174,6 +179,19 @@ export default function ClientDetailPage() {
       setData(updated)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update subscription')
+    }
+  }
+
+  async function handleToggleAllSubscriptions(activate: boolean) {
+    setTogglingAll(true)
+    try {
+      await toggleAllSubscriptions(companyId, activate)
+      const updated = await getClientById(companyId)
+      setData(updated)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update subscriptions')
+    } finally {
+      setTogglingAll(false)
     }
   }
 
@@ -341,11 +359,29 @@ export default function ClientDetailPage() {
 
           {/* Subscriptions */}
           <div className="glass-card rounded-2xl p-6 animate-fade-in-up" style={{ animationDelay: '100ms', animationFillMode: 'both' }}>
-            <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center justify-between mb-4">
               <h2 className="section-title">Municipality Subscriptions</h2>
               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-brand-100/80 text-brand-700">
-                {subscribedIds.size} active
+                {subscribedIds.size} of {allMunicipalities.length} active
               </span>
+            </div>
+            <div className="flex items-center gap-2 mb-4">
+              <button
+                onClick={() => handleToggleAllSubscriptions(true)}
+                disabled={togglingAll || subscribedIds.size === allMunicipalities.length}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-brand-50 text-brand-600 border border-brand-200/50 hover:bg-brand-100/80 transition-all duration-300 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {togglingAll ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
+                Activate All
+              </button>
+              <button
+                onClick={() => handleToggleAllSubscriptions(false)}
+                disabled={togglingAll || subscribedIds.size === 0}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gold-50 text-gold-700 border border-gold-200/50 hover:bg-gold-100/80 transition-all duration-300 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {togglingAll ? <Loader2 className="w-3 h-3 animate-spin" /> : <Pause className="w-3 h-3" />}
+                Pause All
+              </button>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {allMunicipalities.map((mun) => {
@@ -600,8 +636,46 @@ export default function ClientDetailPage() {
             )}
           </div>
 
+          {/* Subscription controls */}
+          <div className="glass-card rounded-2xl p-5 animate-fade-in-up" style={{ animationDelay: '200ms', animationFillMode: 'both' }}>
+            <h3 className="section-title mb-3">Subscription Controls</h3>
+            <div className="flex items-center gap-2 mb-3">
+              <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                subscribedIds.size > 0
+                  ? 'bg-emerald-100/80 text-emerald-700'
+                  : 'bg-gold-100/80 text-gold-700'
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${
+                  subscribedIds.size > 0 ? 'bg-emerald-500 status-dot-pulse' : 'bg-gold-500'
+                }`} />
+                {subscribedIds.size > 0 ? `${subscribedIds.size} Active` : 'All Paused'}
+              </span>
+            </div>
+            <div className="space-y-2">
+              <button
+                onClick={() => handleToggleAllSubscriptions(true)}
+                disabled={togglingAll || subscribedIds.size === allMunicipalities.length}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-emerald-50 text-emerald-600 border border-emerald-200/50 hover:bg-emerald-100/80 transition-all duration-300 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {togglingAll ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                Activate All Subscriptions
+              </button>
+              <button
+                onClick={() => handleToggleAllSubscriptions(false)}
+                disabled={togglingAll || subscribedIds.size === 0}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-gold-50 text-gold-700 border border-gold-200/50 hover:bg-gold-100/80 transition-all duration-300 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {togglingAll ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pause className="w-4 h-4" />}
+                Pause All Subscriptions
+              </button>
+            </div>
+            <p className="text-[11px] text-navy-400 mt-2 text-center">
+              Pausing stops SMS for selected locations without deactivating the account
+            </p>
+          </div>
+
           {/* Status toggle */}
-          <div className="glass-card rounded-2xl p-5 animate-fade-in-up" style={{ animationDelay: '250ms', animationFillMode: 'both' }}>
+          <div className="glass-card rounded-2xl p-5 animate-fade-in-up" style={{ animationDelay: '300ms', animationFillMode: 'both' }}>
             <h3 className="section-title mb-4">Account Status</h3>
             <button
               onClick={handleToggleActive}
