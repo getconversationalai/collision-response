@@ -4,14 +4,21 @@ import { useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import LocationToggle from './LocationToggle'
 
-type Location = {
+type FlatLocation = {
   id: string
   name: string
+  display_name: string | null
   county: string
   state: string
   is_active: boolean
+  parent_id: string | null
+  admin_only: boolean
   is_subscribed: boolean
   subscription_id: string | null
+}
+
+type GroupedLocation = FlatLocation & {
+  children: FlatLocation[]
 }
 
 export default function LocationsSection({
@@ -21,20 +28,32 @@ export default function LocationsSection({
   children,
 }: {
   companyId: string
-  locations: Location[]
+  locations: GroupedLocation[]
   initialActiveCount: number
   children?: React.ReactNode
 }) {
   const [activeCount, setActiveCount] = useState(initialActiveCount)
-  const [locations, setLocations] = useState(initialLocations)
   const [bulkPending, setBulkPending] = useState(false)
   const [toggleKey, setToggleKey] = useState(0)
 
-  const allSelected = activeCount === locations.length
-  const noneSelected = activeCount === 0
+  // Flat arrays for the main grid (parents) and the sub-channels section
+  const parents = initialLocations
+  const subs = initialLocations.flatMap(p =>
+    p.children.map(c => ({ ...c, _parentLabel: p.display_name || p.name }))
+  )
+
+  // Toggleable = everything except admin_only
+  const [parentState, setParentState] = useState(parents)
+  const [subState, setSubState] = useState(subs)
+
+  const flat = [...parentState, ...subState]
+  const toggleable = flat.filter(l => !l.admin_only)
+  const toggleableSubscribedCount = toggleable.filter(l => l.is_subscribed).length
+  const allSelected = toggleable.length > 0 && toggleableSubscribedCount === toggleable.length
+  const totalDisplay = flat.length
 
   function handleToggle(newState: boolean) {
-    setActiveCount((prev) => newState ? prev + 1 : prev - 1)
+    setActiveCount(prev => newState ? prev + 1 : prev - 1)
   }
 
   const handleBulkToggle = useCallback(async () => {
@@ -44,7 +63,7 @@ export default function LocationsSection({
     const subscribeAll = !allSelected
     const supabase = createClient()
 
-    const upserts = locations.map((loc) => ({
+    const upserts = toggleable.map(loc => ({
       company_id: companyId,
       municipality_id: loc.id,
       is_subscribed: subscribeAll,
@@ -55,15 +74,21 @@ export default function LocationsSection({
       .upsert(upserts, { onConflict: 'company_id,municipality_id' })
 
     if (!error) {
-      setLocations((prev) =>
-        prev.map((loc) => ({ ...loc, is_subscribed: subscribeAll }))
-      )
-      setActiveCount(subscribeAll ? locations.length : 0)
-      setToggleKey((k) => k + 1)
+      setParentState(prev => prev.map(l => ({
+        ...l,
+        is_subscribed: l.admin_only ? l.is_subscribed : subscribeAll,
+      })))
+      setSubState(prev => prev.map(l => ({
+        ...l,
+        is_subscribed: l.admin_only ? l.is_subscribed : subscribeAll,
+      })))
+      const adminOnlyActive = flat.filter(l => l.admin_only && l.is_subscribed).length
+      setActiveCount(subscribeAll ? toggleable.length + adminOnlyActive : adminOnlyActive)
+      setToggleKey(k => k + 1)
     }
 
     setBulkPending(false)
-  }, [bulkPending, allSelected, locations, companyId])
+  }, [bulkPending, allSelected, toggleable, flat, companyId])
 
   return (
     <>
@@ -89,7 +114,7 @@ export default function LocationsSection({
             </div>
             <div className="w-px h-10 bg-white/20" />
             <div className="text-right">
-              <div className="text-3xl font-extrabold text-white/60">{locations.length}</div>
+              <div className="text-3xl font-extrabold text-white/60">{totalDisplay}</div>
               <div className="text-xs text-brand-200/60 font-semibold uppercase tracking-wider">Total</div>
             </div>
           </div>
@@ -99,7 +124,7 @@ export default function LocationsSection({
       {/* Slot for phone editor or other content between banner and grid */}
       {children}
 
-      {/* Locations grid */}
+      {/* Main locations grid */}
       <div className="animate-fade-in-up" style={{ animationDelay: '0.2s', animationFillMode: 'both' }}>
         <div className="flex items-center justify-between mb-5">
           <div className="flex items-center gap-3">
@@ -114,7 +139,7 @@ export default function LocationsSection({
           <div className="flex items-center gap-3">
             <button
               onClick={handleBulkToggle}
-              disabled={bulkPending}
+              disabled={bulkPending || toggleable.length === 0}
               className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-300 ${
                 allSelected
                   ? 'bg-navy-100/80 text-navy-600 hover:bg-navy-200/80 border border-navy-200/50'
@@ -138,13 +163,13 @@ export default function LocationsSection({
               {allSelected ? 'Deselect All' : 'Select All'}
             </button>
             <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-brand-50 text-brand-600 border border-brand-100 transition-all duration-300">
-              {activeCount} / {locations.length}
+              {activeCount} / {totalDisplay}
             </span>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {locations.map((location, i) => (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-start">
+          {parentState.map((location, i) => (
             <div
               key={`${location.id}-${toggleKey}`}
               className="animate-fade-in-up"
@@ -154,12 +179,13 @@ export default function LocationsSection({
                 companyId={companyId}
                 municipality={location}
                 onToggle={handleToggle}
+                variant="card"
               />
             </div>
           ))}
         </div>
 
-        {locations.length === 0 && (
+        {parentState.length === 0 && (
           <div className="glass-card-rich rounded-2xl p-12 text-center">
             <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-navy-100 text-navy-400 mb-4 animate-float">
               <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
@@ -171,6 +197,47 @@ export default function LocationsSection({
           </div>
         )}
       </div>
+
+      {/* Sub-channels section (pinned below main grid) */}
+      {subState.length > 0 && (
+        <div
+          className="animate-fade-in-up"
+          style={{ animationDelay: '0.3s', animationFillMode: 'both' }}
+        >
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-navy-100 to-navy-50 text-navy-600">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 0 1-1.043 3.296 3.745 3.745 0 0 1-3.296 1.043A3.745 3.745 0 0 1 12 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 0 1-3.296-1.043 3.745 3.745 0 0 1-1.043-3.296A3.745 3.745 0 0 1 3 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 0 1 1.043-3.296 3.746 3.746 0 0 1 3.296-1.043A3.746 3.746 0 0 1 12 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 0 1 3.296 1.043 3.746 3.746 0 0 1 1.043 3.296A3.745 3.745 0 0 1 21 12Z" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="section-title">Specialty Channels</h2>
+                <p className="text-[11px] text-navy-400 mt-0.5 font-medium">
+                  Separate dispatch feeds for police departments and specialized services
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-start">
+            {subState.map((sub, i) => (
+              <div
+                key={`${sub.id}-${toggleKey}`}
+                className="animate-fade-in-up"
+                style={{ animationDelay: `${0.04 * (i + 1) + 0.3}s`, animationFillMode: 'both' }}
+              >
+                <LocationToggle
+                  companyId={companyId}
+                  municipality={sub}
+                  onToggle={handleToggle}
+                  variant="sub"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </>
   )
 }

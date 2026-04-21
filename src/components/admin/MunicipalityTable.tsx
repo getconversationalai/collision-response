@@ -58,6 +58,7 @@ export default function MunicipalityTable({ municipalities }: MunicipalityTableP
       const q = search.toLowerCase()
       list = list.filter(m =>
         m.name.toLowerCase().includes(q) ||
+        (m.display_name?.toLowerCase().includes(q) ?? false) ||
         m.county.toLowerCase().includes(q) ||
         m.state.toLowerCase().includes(q)
       )
@@ -166,8 +167,27 @@ export default function MunicipalityTable({ municipalities }: MunicipalityTableP
                   >
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-2">
-                        <MapPin className={`w-3.5 h-3.5 ${mun.is_active ? 'text-brand-500' : 'text-navy-300'}`} />
-                        <span className="font-semibold text-navy-800 text-sm">{mun.name}</span>
+                        <MapPin className={`w-3.5 h-3.5 ${mun.is_active ? 'text-brand-500' : 'text-navy-300'} ${mun.parent_id ? 'ml-4' : ''}`} />
+                        <div className="min-w-0">
+                          <span className="font-semibold text-navy-800 text-sm">
+                            {mun.display_name || mun.name}
+                          </span>
+                          {mun.display_name && (
+                            <span className="ml-2 text-[11px] font-medium text-navy-400">({mun.name})</span>
+                          )}
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            {mun.parent_id && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-navy-100 text-navy-500 uppercase tracking-wide">
+                                sub
+                              </span>
+                            )}
+                            {mun.admin_only && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-gold-100 text-gold-700 uppercase tracking-wide">
+                                admin-only
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     </td>
                     <td className="px-5 py-3.5 text-sm text-navy-600">{mun.county}</td>
@@ -208,7 +228,20 @@ export default function MunicipalityTable({ municipalities }: MunicipalityTableP
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex items-center gap-2">
                     <MapPin className={`w-3.5 h-3.5 ${mun.is_active ? 'text-brand-500' : 'text-navy-300'}`} />
-                    <p className="font-semibold text-navy-800 text-sm">{mun.name}</p>
+                    <div>
+                      <p className="font-semibold text-navy-800 text-sm">
+                        {mun.display_name || mun.name}
+                        {mun.display_name && <span className="ml-1.5 text-[11px] font-medium text-navy-400">({mun.name})</span>}
+                      </p>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        {mun.parent_id && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-navy-100 text-navy-500 uppercase tracking-wide">sub</span>
+                        )}
+                        {mun.admin_only && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-gold-100 text-gold-700 uppercase tracking-wide">admin-only</span>
+                        )}
+                      </div>
+                    </div>
                   </div>
                   <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${
                     mun.is_active

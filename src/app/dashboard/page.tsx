@@ -18,13 +18,13 @@ export default async function DashboardPage() {
 
   const { data: companyData } = await supabase
     .from('collision_companies')
-    .select('id, company_name, contact_name, phone, email')
+    .select('id, company_name, contact_name, phone, phone_secondary, email')
     .eq('auth_user_id', user.id)
     .single()
 
   const company = companyData as Pick<
     CollisionCompany,
-    'id' | 'company_name' | 'contact_name' | 'phone' | 'email'
+    'id' | 'company_name' | 'contact_name' | 'phone' | 'phone_secondary' | 'email'
   > | null
 
   if (!company) {
@@ -52,8 +52,10 @@ export default async function DashboardPage() {
   const [{ data: municipalitiesData }, { data: subscriptionsData }] = await Promise.all([
     supabase
       .from('municipalities')
-      .select('id, name, county, state, is_active')
+      .select('id, name, display_name, county, state, is_active, parent_id, admin_only')
       .eq('is_active', true)
+      .not('name', 'is', null)
+      .neq('name', '')
       .order('name'),
     supabase
       .from('subscriptions')
@@ -63,7 +65,7 @@ export default async function DashboardPage() {
 
   const municipalities = (municipalitiesData ?? []) as Pick<
     Municipality,
-    'id' | 'name' | 'county' | 'state' | 'is_active'
+    'id' | 'name' | 'display_name' | 'county' | 'state' | 'is_active' | 'parent_id' | 'admin_only'
   >[]
 
   const subscriptions = (subscriptionsData ?? []) as Pick<
@@ -75,13 +77,33 @@ export default async function DashboardPage() {
     subscriptions.map((s) => [s.municipality_id, s])
   )
 
-  const locations = municipalities.map((m) => ({
+  const flatLocations = municipalities.map((m) => ({
     ...m,
     is_subscribed: subscriptionMap.get(m.id)?.is_subscribed ?? false,
     subscription_id: subscriptionMap.get(m.id)?.id ?? null,
   }))
 
-  const initialActiveCount = locations.filter(l => l.is_subscribed).length
+  // Group sub-toggles under parents. Root locations keep natural alpha order;
+  // children are attached to their parent's `children` array.
+  const byId = new Map(flatLocations.map(l => [l.id, l]))
+  const children: Record<string, typeof flatLocations> = {}
+  for (const loc of flatLocations) {
+    if (loc.parent_id && byId.has(loc.parent_id)) {
+      (children[loc.parent_id] ??= []).push(loc)
+    }
+  }
+
+  const locations = flatLocations
+    .filter(l => !l.parent_id)
+    .map(l => ({
+      ...l,
+      children: (children[l.id] ?? []).sort((a, b) =>
+        (a.display_name || a.name).localeCompare(b.display_name || b.name)
+      ),
+    }))
+
+  // Count everything that's actually subscribable (includes children)
+  const initialActiveCount = flatLocations.filter(l => l.is_subscribed).length
 
   return (
     <div className="min-h-screen relative">
@@ -102,7 +124,11 @@ export default async function DashboardPage() {
         >
           {/* Phone section — between banner and location grid */}
           <div className="animate-fade-in-up" style={{ animationDelay: '0.1s', animationFillMode: 'both' }}>
-            <PhoneEditor companyId={company.id} initialPhone={company.phone} />
+            <PhoneEditor
+              companyId={company.id}
+              initialPhone={company.phone}
+              initialPhoneSecondary={company.phone_secondary}
+            />
           </div>
         </LocationsSection>
       </main>

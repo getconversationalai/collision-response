@@ -1,9 +1,12 @@
 export type Municipality = {
   id: string
   name: string
+  display_name: string | null
   county: string
   state: string
   is_active: boolean
+  parent_id: string | null
+  admin_only: boolean
   created_at: string
 }
 
@@ -13,10 +16,25 @@ export type CollisionCompany = {
   company_name: string
   contact_name: string | null
   phone: string | null
+  phone_secondary: string | null
   email: string | null
   is_active: boolean
+  is_admin: boolean
   created_at: string
   updated_at: string
+}
+
+export type SystemSettings = {
+  id: number
+  test_mode_until: string | null
+  updated_at: string
+}
+
+export type MunicipalityAlias = {
+  id: string
+  municipality_id: string
+  alias: string
+  created_at: string
 }
 
 export type Subscription = {
@@ -57,13 +75,22 @@ export type Database = {
     Tables: {
       municipalities: {
         Row: Municipality
-        Insert: Omit<Municipality, 'id' | 'created_at'> & { id?: string; created_at?: string }
+        Insert: Omit<Municipality, 'id' | 'created_at' | 'display_name' | 'parent_id' | 'admin_only'> & {
+          id?: string
+          created_at?: string
+          display_name?: string | null
+          parent_id?: string | null
+          admin_only?: boolean
+        }
         Update: Partial<Omit<Municipality, 'id'>>
         Relationships: []
       }
       collision_companies: {
         Row: CollisionCompany
-        Insert: Omit<CollisionCompany, 'id' | 'created_at' | 'updated_at'> & { id?: string }
+        Insert: Omit<CollisionCompany, 'id' | 'created_at' | 'updated_at' | 'is_admin'> & {
+          id?: string
+          is_admin?: boolean
+        }
         Update: Partial<Omit<CollisionCompany, 'id' | 'auth_user_id'>>
         Relationships: []
       }
@@ -111,6 +138,26 @@ export type Database = {
             columns: ['company_id']
             isOneToOne: false
             referencedRelation: 'collision_companies'
+            referencedColumns: ['id']
+          }
+        ]
+      }
+      system_settings: {
+        Row: SystemSettings
+        Insert: Partial<SystemSettings>
+        Update: Partial<SystemSettings>
+        Relationships: []
+      }
+      municipality_aliases: {
+        Row: MunicipalityAlias
+        Insert: Omit<MunicipalityAlias, 'id' | 'created_at'> & { id?: string; created_at?: string }
+        Update: Partial<Omit<MunicipalityAlias, 'id'>>
+        Relationships: [
+          {
+            foreignKeyName: 'municipality_aliases_municipality_id_fkey'
+            columns: ['municipality_id']
+            isOneToOne: false
+            referencedRelation: 'municipalities'
             referencedColumns: ['id']
           }
         ]

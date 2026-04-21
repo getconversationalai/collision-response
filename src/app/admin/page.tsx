@@ -1,6 +1,7 @@
 import { getDashboardStats } from '@/lib/actions/admin-actions'
 import type { RecentClient } from '@/lib/actions/admin-actions'
 import StatsCard from '@/components/admin/StatsCard'
+import TestModePanel from '@/components/admin/TestModePanel'
 import Link from 'next/link'
 
 function formatDate(dateStr: string) {
@@ -49,6 +50,11 @@ export default async function AdminDashboard() {
           color="gold"
           delay={200}
         />
+      </div>
+
+      {/* Test mode */}
+      <div className="mb-6">
+        <TestModePanel />
       </div>
 
       {/* Add new client CTA */}

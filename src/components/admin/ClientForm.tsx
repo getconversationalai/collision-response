@@ -49,6 +49,7 @@ export default function ClientForm() {
   const [contactName, setContactName] = useState('')
   const [email, setEmail] = useState('')
   const [phoneRaw, setPhoneRaw] = useState('')
+  const [phoneSecondaryRaw, setPhoneSecondaryRaw] = useState('')
 
   // Step 2: Credentials
   const [password, setPassword] = useState('')
@@ -64,6 +65,8 @@ export default function ClientForm() {
 
   const phoneFormatted = formatPhoneDisplay(phoneRaw)
   const phoneE164 = toE164(phoneRaw)
+  const phoneSecondaryFormatted = formatPhoneDisplay(phoneSecondaryRaw)
+  const phoneSecondaryE164 = phoneSecondaryRaw ? toE164(phoneSecondaryRaw) : undefined
 
   // Load municipalities on step 3
   const loadMunicipalities = useCallback(async () => {
@@ -79,8 +82,9 @@ export default function ClientForm() {
 
   function canAdvance(): boolean {
     if (step === 0) {
+      const secondaryOk = !phoneSecondaryRaw || phoneSecondaryRaw.replace(/\D/g, '').length === 10
       return !!(companyName.trim() && contactName.trim() && email.trim() && phoneRaw.replace(/\D/g, '').length === 10 &&
-        /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+        /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && secondaryOk)
     }
     if (step === 1) {
       return !!(password && password.length >= 8 && password === confirmPassword)
@@ -132,6 +136,7 @@ export default function ClientForm() {
         contactName: contactName.trim(),
         email: email.trim(),
         phone: phoneE164,
+        phoneSecondary: phoneSecondaryE164,
         password,
         municipalityIds: Array.from(selectedMunicipalities),
       })
@@ -149,6 +154,7 @@ export default function ClientForm() {
     setContactName('')
     setEmail('')
     setPhoneRaw('')
+    setPhoneSecondaryRaw('')
     setPassword('')
     setConfirmPassword('')
     setSelectedMunicipalities(new Set())
@@ -332,6 +338,36 @@ export default function ClientForm() {
                   </p>
                 )}
               </div>
+
+              <div className="animate-fade-in-up" style={{ animationDelay: '250ms', animationFillMode: 'both' }}>
+                <label className="block text-sm font-semibold text-navy-700 mb-2">
+                  <span className="flex items-center gap-1.5">
+                    <Phone className="w-3.5 h-3.5 text-navy-400" />
+                    Secondary Phone
+                    <span className="text-[11px] font-medium text-navy-400">optional — admin-managed only</span>
+                  </span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-navy-500 bg-navy-50/60 px-3 py-2.5 rounded-xl border border-navy-200/40">
+                    +1
+                  </span>
+                  <input
+                    type="tel"
+                    value={phoneSecondaryFormatted}
+                    onChange={(e) => {
+                      const digits = e.target.value.replace(/\D/g, '').slice(0, 10)
+                      setPhoneSecondaryRaw(digits)
+                    }}
+                    className="input-field flex-1"
+                    placeholder="(555) 987-6543"
+                  />
+                </div>
+                {phoneSecondaryRaw && phoneSecondaryRaw.length > 0 && phoneSecondaryRaw.length < 10 && (
+                  <p className="mt-1.5 text-xs text-navy-400 font-medium animate-fade-in">
+                    {10 - phoneSecondaryRaw.length} more digit{10 - phoneSecondaryRaw.length !== 1 ? 's' : ''} needed
+                  </p>
+                )}
+              </div>
             </div>
           )}
 
@@ -410,6 +446,12 @@ export default function ClientForm() {
                     <span className="font-semibold text-navy-800">{email}</span>
                     <span className="text-navy-400">Phone</span>
                     <span className="font-semibold text-navy-800">+1 {phoneFormatted}</span>
+                    {phoneSecondaryRaw && (
+                      <>
+                        <span className="text-navy-400">Secondary Phone</span>
+                        <span className="font-semibold text-navy-800">+1 {phoneSecondaryFormatted}</span>
+                      </>
+                    )}
                   </div>
                 </div>
 

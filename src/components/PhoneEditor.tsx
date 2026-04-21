@@ -8,10 +8,14 @@ function formatPhone(e164: string): string {
 
 export default function PhoneEditor({
   initialPhone,
+  initialPhoneSecondary,
 }: {
   companyId: string
   initialPhone: string | null
+  initialPhoneSecondary?: string | null
 }) {
+  const hasSecondary = !!initialPhoneSecondary
+
   return (
     <div className="glass-card-rich rounded-2xl p-5 sm:p-6 card-lift">
       <div className="flex items-center gap-3 mb-4">
@@ -21,14 +25,30 @@ export default function PhoneEditor({
           </svg>
         </div>
         <div>
-          <h2 className="section-title">SMS Phone Number</h2>
+          <h2 className="section-title">SMS Phone Number{hasSecondary ? 's' : ''}</h2>
           <p className="text-[11px] text-navy-400 mt-0.5">Where you receive MVA alerts</p>
         </div>
       </div>
 
-      <span className="text-xl font-bold text-navy-900 tracking-tight">
-        {initialPhone ? formatPhone(initialPhone) : 'Not set'}
-      </span>
+      <div className={hasSecondary ? 'grid grid-cols-1 sm:grid-cols-2 gap-3' : ''}>
+        <div className={hasSecondary ? 'rounded-xl bg-white/50 border border-navy-100/60 px-4 py-3' : ''}>
+          {hasSecondary && (
+            <div className="text-[10px] font-bold uppercase tracking-wider text-navy-400 mb-0.5">Primary</div>
+          )}
+          <span className="text-xl font-bold text-navy-900 tracking-tight">
+            {initialPhone ? formatPhone(initialPhone) : 'Not set'}
+          </span>
+        </div>
+
+        {hasSecondary && (
+          <div className="rounded-xl bg-white/50 border border-navy-100/60 px-4 py-3">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-navy-400 mb-0.5">Secondary</div>
+            <span className="text-xl font-bold text-navy-900 tracking-tight">
+              {formatPhone(initialPhoneSecondary!)}
+            </span>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

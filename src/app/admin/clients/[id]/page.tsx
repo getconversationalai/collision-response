@@ -21,6 +21,7 @@ import {
   Pause,
   Play,
   X,
+  FlaskConical,
 } from 'lucide-react'
 import {
   getClientById,
@@ -30,6 +31,7 @@ import {
   getMunicipalities,
   updateSubscription,
   toggleAllSubscriptions,
+  setClientAdminFlag,
 } from '@/lib/actions/admin-actions'
 import type { ClientDetail } from '@/lib/actions/admin-actions'
 import type { Municipality } from '@/lib/types'
@@ -85,6 +87,7 @@ export default function ClientDetailPage() {
   const [contactName, setContactName] = useState('')
   const [email, setEmail] = useState('')
   const [phoneRaw, setPhoneRaw] = useState('')
+  const [phoneSecondaryRaw, setPhoneSecondaryRaw] = useState('')
 
   // Password reset
   const [showPasswordReset, setShowPasswordReset] = useState(false)
@@ -113,6 +116,10 @@ export default function ClientDetailPage() {
       const phone = clientData.company.phone ?? ''
       const digits = phone.replace(/\D/g, '')
       setPhoneRaw(digits.startsWith('1') ? digits.slice(1) : digits)
+
+      const phone2 = clientData.company.phone_secondary ?? ''
+      const digits2 = phone2.replace(/\D/g, '')
+      setPhoneSecondaryRaw(digits2.startsWith('1') ? digits2.slice(1) : digits2)
     } catch {
       setError('Failed to load client data')
     } finally {
@@ -129,11 +136,13 @@ export default function ClientDetailPage() {
     setError('')
     try {
       const phoneDigits = phoneRaw.replace(/\D/g, '')
+      const phone2Digits = phoneSecondaryRaw.replace(/\D/g, '')
       await updateClient(companyId, {
         company_name: companyName.trim(),
         contact_name: contactName.trim(),
         email: email.trim(),
         phone: `+1${phoneDigits}`,
+        phone_secondary: phone2Digits.length === 10 ? `+1${phone2Digits}` : null,
       })
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
@@ -152,6 +161,17 @@ export default function ClientDetailPage() {
       setData(prev => prev ? { ...prev, company: { ...prev.company, is_active: newStatus } } : null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update status')
+    }
+  }
+
+  async function handleToggleAdmin() {
+    if (!data) return
+    const newStatus = !data.company.is_admin
+    try {
+      await setClientAdminFlag(companyId, newStatus)
+      setData(prev => prev ? { ...prev, company: { ...prev.company, is_admin: newStatus } } : null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update admin flag')
     }
   }
 
@@ -233,7 +253,7 @@ export default function ClientDetailPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
         <div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-3xl font-extrabold gradient-text tracking-tight">
               {data.company.company_name}
             </h1>
@@ -247,6 +267,12 @@ export default function ClientDetailPage() {
               }`} />
               {data.company.is_active ? 'Active' : 'Inactive'}
             </span>
+            {data.company.is_admin && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gold-100/80 text-gold-700">
+                <FlaskConical className="w-3 h-3" />
+                Test Recipient
+              </span>
+            )}
           </div>
           <p className="text-navy-400 text-sm mt-1">
             Added {formatDate(data.company.created_at)}
@@ -319,7 +345,7 @@ export default function ClientDetailPage() {
                 <label className="block text-sm font-semibold text-navy-700 mb-1.5">
                   <span className="flex items-center gap-1.5">
                     <Phone className="w-3.5 h-3.5 text-navy-400" />
-                    Phone
+                    Primary Phone
                   </span>
                 </label>
                 <div className="flex items-center gap-2">
@@ -336,6 +362,44 @@ export default function ClientDetailPage() {
                     className="input-field flex-1"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-navy-700 mb-1.5">
+                  <span className="flex items-center gap-1.5">
+                    <Phone className="w-3.5 h-3.5 text-navy-400" />
+                    Secondary Phone
+                    <span className="text-[11px] font-medium text-navy-400">optional — admin-managed only</span>
+                  </span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-navy-500 bg-navy-50/60 px-3 py-2.5 rounded-xl border border-navy-200/40">
+                    +1
+                  </span>
+                  <input
+                    type="tel"
+                    value={formatPhoneInput(phoneSecondaryRaw)}
+                    onChange={(e) => {
+                      const digits = e.target.value.replace(/\D/g, '').slice(0, 10)
+                      setPhoneSecondaryRaw(digits)
+                    }}
+                    className="input-field flex-1"
+                    placeholder="(555) 987-6543"
+                  />
+                  {phoneSecondaryRaw && (
+                    <button
+                      type="button"
+                      onClick={() => setPhoneSecondaryRaw('')}
+                      className="p-2.5 rounded-xl bg-red-50 text-red-500 hover:bg-red-100 transition-colors"
+                      title="Clear secondary phone"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+                <p className="text-[11px] text-navy-400 mt-1">
+                  Both phones receive the same SMS alerts. Clients cannot edit this field.
+                </p>
               </div>
 
               <div className="flex items-center gap-3 pt-2">
@@ -401,8 +465,13 @@ export default function ClientDetailPage() {
                     <div className="flex items-center gap-2">
                       <MapPin className={`w-3.5 h-3.5 ${isSubscribed ? 'text-brand-500' : 'text-navy-300'}`} />
                       <span className={`font-medium ${isSubscribed ? 'text-brand-800' : 'text-navy-600'}`}>
-                        {mun.name}
+                        {mun.display_name || mun.name}
                       </span>
+                      {mun.admin_only && (
+                        <span className="ml-auto inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-gold-100 text-gold-700 uppercase tracking-wide">
+                          admin
+                        </span>
+                      )}
                     </div>
                   </button>
                 )
@@ -671,6 +740,25 @@ export default function ClientDetailPage() {
             </div>
             <p className="text-[11px] text-navy-400 mt-2 text-center">
               Pausing stops SMS for selected locations without deactivating the account
+            </p>
+          </div>
+
+          {/* Test recipient flag */}
+          <div className="glass-card rounded-2xl p-5 animate-fade-in-up" style={{ animationDelay: '250ms', animationFillMode: 'both' }}>
+            <h3 className="section-title mb-3">Test Mode Recipient</h3>
+            <button
+              onClick={handleToggleAdmin}
+              className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 ${
+                data.company.is_admin
+                  ? 'bg-gold-100 text-gold-700 border border-gold-300/60 hover:bg-gold-200/80'
+                  : 'bg-navy-50 text-navy-600 border border-navy-200/50 hover:bg-navy-100/80'
+              }`}
+            >
+              <FlaskConical className="w-4 h-4" />
+              {data.company.is_admin ? 'Receives Test SMS' : 'Mark as Test Recipient'}
+            </button>
+            <p className="text-[11px] text-navy-400 mt-2 text-center">
+              When test mode is active, only test recipients receive SMS notifications.
             </p>
           </div>
 
