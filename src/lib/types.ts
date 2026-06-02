@@ -10,6 +10,19 @@ export type Municipality = {
   created_at: string
 }
 
+// Stripe billing lifecycle (migration 004):
+//   pending  — no card on file yet (is_active stays false)
+//   active   — card on file, payments succeeding
+//   past_due — last payment failed, SMS disabled (is_active false)
+//   canceled — subscription ended
+//   comped   — admin-comped, no Stripe charge, SMS still active
+export type BillingStatus =
+  | 'pending'
+  | 'active'
+  | 'past_due'
+  | 'canceled'
+  | 'comped'
+
 export type CollisionCompany = {
   id: string
   auth_user_id: string
@@ -20,6 +33,14 @@ export type CollisionCompany = {
   email: string | null
   is_active: boolean
   is_admin: boolean
+  // Stripe billing (migration 004)
+  stripe_customer_id: string | null
+  stripe_subscription_id: string | null
+  monthly_price_cents: number | null      // NULL = use system default
+  is_comped: boolean
+  billing_status: BillingStatus
+  current_period_end: string | null
+  last_payment_failed_at: string | null
   created_at: string
   updated_at: string
 }
@@ -27,7 +48,21 @@ export type CollisionCompany = {
 export type SystemSettings = {
   id: number
   test_mode_until: string | null
+  default_monthly_price_cents: number     // global default monthly price
   updated_at: string
+}
+
+export type PaymentStatus = 'succeeded' | 'failed' | 'refunded'
+
+export type PaymentLog = {
+  id: string
+  company_id: string
+  stripe_invoice_id: string | null
+  stripe_event_id: string | null          // UNIQUE — webhook idempotency guard
+  amount_cents: number | null
+  status: PaymentStatus
+  failure_reason: string | null
+  created_at: string
 }
 
 export type MunicipalityAlias = {
@@ -87,9 +122,29 @@ export type Database = {
       }
       collision_companies: {
         Row: CollisionCompany
-        Insert: Omit<CollisionCompany, 'id' | 'created_at' | 'updated_at' | 'is_admin'> & {
+        Insert: Omit<
+          CollisionCompany,
+          | 'id'
+          | 'created_at'
+          | 'updated_at'
+          | 'is_admin'
+          | 'stripe_customer_id'
+          | 'stripe_subscription_id'
+          | 'monthly_price_cents'
+          | 'is_comped'
+          | 'billing_status'
+          | 'current_period_end'
+          | 'last_payment_failed_at'
+        > & {
           id?: string
           is_admin?: boolean
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          monthly_price_cents?: number | null
+          is_comped?: boolean
+          billing_status?: BillingStatus
+          current_period_end?: string | null
+          last_payment_failed_at?: string | null
         }
         Update: Partial<Omit<CollisionCompany, 'id' | 'auth_user_id'>>
         Relationships: []
@@ -158,6 +213,20 @@ export type Database = {
             columns: ['municipality_id']
             isOneToOne: false
             referencedRelation: 'municipalities'
+            referencedColumns: ['id']
+          }
+        ]
+      }
+      payment_log: {
+        Row: PaymentLog
+        Insert: Omit<PaymentLog, 'id' | 'created_at'> & { id?: string; created_at?: string }
+        Update: Partial<Omit<PaymentLog, 'id'>>
+        Relationships: [
+          {
+            foreignKeyName: 'payment_log_company_id_fkey'
+            columns: ['company_id']
+            isOneToOne: false
+            referencedRelation: 'collision_companies'
             referencedColumns: ['id']
           }
         ]

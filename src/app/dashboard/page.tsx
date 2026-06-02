@@ -1,9 +1,11 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { getBillingState } from '@/lib/actions/billing-actions'
 import type { CollisionCompany, Municipality, Subscription } from '@/lib/types'
 import Header from '@/components/Header'
 import PhoneEditor from '@/components/PhoneEditor'
 import LocationsSection from '@/components/LocationsSection'
+import DashboardBilling from '@/components/DashboardBilling'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -49,7 +51,7 @@ export default async function DashboardPage() {
     )
   }
 
-  const [{ data: municipalitiesData }, { data: subscriptionsData }] = await Promise.all([
+  const [{ data: municipalitiesData }, { data: subscriptionsData }, billing] = await Promise.all([
     supabase
       .from('municipalities')
       .select('id, name, display_name, county, state, is_active, parent_id, admin_only')
@@ -61,6 +63,7 @@ export default async function DashboardPage() {
       .from('subscriptions')
       .select('id, municipality_id, is_subscribed')
       .eq('company_id', company.id),
+    getBillingState(),
   ])
 
   const municipalities = (municipalitiesData ?? []) as Pick<
@@ -117,20 +120,34 @@ export default async function DashboardPage() {
       <Header companyName={company.company_name} />
 
       <main className="max-w-5xl mx-auto px-4 sm:px-6 py-8 space-y-10">
-        <LocationsSection
-          companyId={company.id}
-          locations={locations}
-          initialActiveCount={initialActiveCount}
+        <DashboardBilling state={billing} />
+
+        {/* Location toggles are visually muted until billing is set up */}
+        <div
+          className={`space-y-10 transition-opacity ${
+            billing.billingStatus === 'pending' ? 'opacity-60' : ''
+          }`}
+          title={
+            billing.billingStatus === 'pending'
+              ? 'Location toggles are inactive until billing is set up.'
+              : undefined
+          }
         >
-          {/* Phone section — between banner and location grid */}
-          <div className="animate-fade-in-up" style={{ animationDelay: '0.1s', animationFillMode: 'both' }}>
-            <PhoneEditor
-              companyId={company.id}
-              initialPhone={company.phone}
-              initialPhoneSecondary={company.phone_secondary}
-            />
-          </div>
-        </LocationsSection>
+          <LocationsSection
+            companyId={company.id}
+            locations={locations}
+            initialActiveCount={initialActiveCount}
+          >
+            {/* Phone section — between banner and location grid */}
+            <div className="animate-fade-in-up" style={{ animationDelay: '0.1s', animationFillMode: 'both' }}>
+              <PhoneEditor
+                companyId={company.id}
+                initialPhone={company.phone}
+                initialPhoneSecondary={company.phone_secondary}
+              />
+            </div>
+          </LocationsSection>
+        </div>
       </main>
     </div>
   )

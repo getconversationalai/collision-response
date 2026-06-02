@@ -7,6 +7,7 @@ import {
   Users,
   UserPlus,
   MapPin,
+  CreditCard,
   Shield,
   Menu,
   X,
@@ -20,6 +21,7 @@ const navItems = [
   { href: '/admin/clients', label: 'Clients', icon: Users },
   { href: '/admin/clients/new', label: 'Add Client', icon: UserPlus },
   { href: '/admin/municipalities', label: 'Municipalities', icon: MapPin },
+  { href: '/admin/billing', label: 'Billing', icon: CreditCard },
 ]
 
 export default function AdminSidebar() {

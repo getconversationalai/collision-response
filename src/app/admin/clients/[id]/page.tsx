@@ -35,6 +35,7 @@ import {
 } from '@/lib/actions/admin-actions'
 import type { ClientDetail } from '@/lib/actions/admin-actions'
 import type { Municipality } from '@/lib/types'
+import ClientBillingSection from '@/components/admin/ClientBillingSection'
 
 function formatPhoneInput(value: string): string {
   const digits = value.replace(/\D/g, '').slice(0, 10)
@@ -420,6 +421,9 @@ export default function ClientDetailPage() {
               </div>
             </div>
           </div>
+
+          {/* Billing */}
+          <ClientBillingSection companyId={companyId} />
 
           {/* Subscriptions */}
           <div className="glass-card rounded-2xl p-6 animate-fade-in-up" style={{ animationDelay: '100ms', animationFillMode: 'both' }}>
