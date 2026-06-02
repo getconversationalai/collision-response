@@ -1,4 +1,4 @@
-# Collision Response
+# Collision Ping
 
 Client portal for auto collision companies to manage their MVA (Motor Vehicle Accident) SMS notification subscriptions.
 
@@ -46,7 +46,7 @@ Prospects can apply at the public `/apply` link (no login required). Approved cl
 - **Resend setup (required for any email):**
   1. In the Resend dashboard (https://resend.com/domains), add your sending domain, e.g. `mail.yourdomain.com`.
   2. Add the DNS records Resend shows (SPF/MX, DKIM TXT, and return-path) at your DNS provider and wait for verification.
-  3. Set `RESEND_API_KEY` and `RESEND_FROM` (e.g. `Collision Response <noreply@mail.yourdomain.com>` — the domain must match the verified one).
+  3. Set `RESEND_API_KEY` and `RESEND_FROM` (e.g. `Collision Ping <noreply@mail.yourdomain.com>` — the domain must match the verified one).
   4. If the domain is unverified or the keys are missing, sends fail silently; the app logs the failure and surfaces a "Resend email" affordance on the review page, but never blocks the DB write or the applicant's success page.
 
 ## Stripe Billing

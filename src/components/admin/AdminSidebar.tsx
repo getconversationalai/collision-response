@@ -89,7 +89,7 @@ export default function AdminSidebar({ pendingApplications = 0 }: { pendingAppli
             </div>
             <div>
               <h2 className="text-sm font-bold gradient-text">Admin Portal</h2>
-              <p className="text-[11px] text-navy-400 font-medium">Collision Response</p>
+              <p className="text-[11px] text-navy-400 font-medium">Collision Ping</p>
             </div>
           </div>
         </div>

@@ -1,7 +1,7 @@
 import ApplicationSuccess from '@/components/apply/ApplicationSuccess'
 
 export const metadata = {
-  title: 'Application received — Collision Response',
+  title: 'Application received — Collision Ping',
 }
 
 export default function ApplySuccessPage() {

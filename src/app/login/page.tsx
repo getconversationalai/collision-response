@@ -54,7 +54,7 @@ export default function LoginPage() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
             </svg>
           </div>
-          <h1 className="text-3xl font-extrabold gradient-text tracking-tight">Collision Response</h1>
+          <h1 className="text-3xl font-extrabold gradient-text tracking-tight">Collision Ping</h1>
           <p className="text-sm text-navy-400 mt-2 font-medium">Sign in to manage your subscriptions</p>
         </div>
 
