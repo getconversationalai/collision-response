@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import AdminSidebar from '@/components/admin/AdminSidebar'
+import { getPendingApplicationCount } from '@/lib/actions/application-actions'
 
 function getAdminIds(): string[] {
   const raw = process.env.ADMIN_USER_IDS ?? ''
@@ -38,6 +39,13 @@ export default async function AdminLayout({
   const adminIds = getAdminIds()
   if (!adminIds.includes(user.id)) redirect('/dashboard')
 
+  let pendingApplications = 0
+  try {
+    pendingApplications = await getPendingApplicationCount()
+  } catch {
+    pendingApplications = 0
+  }
+
   return (
     <div className="min-h-screen relative overflow-hidden">
       {/* Background orbs */}
@@ -48,7 +56,7 @@ export default async function AdminLayout({
       </div>
 
       <div className="flex min-h-screen">
-        <AdminSidebar />
+        <AdminSidebar pendingApplications={pendingApplications} />
         <main className="flex-1 lg:pl-0">
           <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pt-16 lg:pt-8">
             {children}

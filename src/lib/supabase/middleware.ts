@@ -6,6 +6,19 @@ function getAdminIds(): string[] {
   return raw.split(',').map(id => id.trim()).filter(Boolean)
 }
 
+// Public paths reachable without a session. `/auth/confirm` exchanges a
+// one-time token for a session, so it MUST be reachable while logged out.
+// `/set-password` is also public so the expired-link UI is reachable: an
+// expired token redirects to /set-password?error=expired with NO session,
+// which would otherwise be bounced to /login. That page renders the
+// set-password form only when a session exists, and the "request a fresh
+// link" state otherwise — so exposing it to anon traffic is safe.
+const PUBLIC_PREFIXES = ['/login', '/apply', '/auth/confirm', '/set-password']
+
+function isPublicPath(pathname: string): boolean {
+  return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + '/'))
+}
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
 
@@ -37,8 +50,8 @@ export async function updateSession(request: NextRequest) {
   const pathname = request.nextUrl.pathname
   const isAdminRoute = pathname.startsWith('/admin')
 
-  // Unauthenticated users → login (except if already on login)
-  if (!user && !pathname.startsWith('/login')) {
+  // Unauthenticated users → login (except public paths)
+  if (!user && !isPublicPath(pathname)) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)

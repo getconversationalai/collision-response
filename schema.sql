@@ -103,12 +103,44 @@ JOIN municipalities m ON m.id = a.municipality_id;
 CREATE TABLE system_settings (
   id INT PRIMARY KEY DEFAULT 1,
   test_mode_until TIMESTAMPTZ,         -- NULL = off; else SMS is restricted to is_admin companies until this time
+  default_monthly_price_cents INT NOT NULL DEFAULT 5000,  -- global default monthly price in cents
+  notification_emails TEXT[] NOT NULL DEFAULT '{}',       -- admin addresses notified on new applications
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT system_settings_singleton CHECK (id = 1)
 );
 INSERT INTO system_settings (id) VALUES (1) ON CONFLICT DO NOTHING;
 
--- 7. SMS_RECIPIENTS VIEW (n8n queries this to find who gets SMS)
+-- 7. CLIENT APPLICATIONS (prospect submissions awaiting admin review)
+-- No auth user / collision_companies row exists until an admin approves.
+-- Service-role-only: RLS-enabled with zero policies = default-deny for
+-- anon/authenticated; only the service role (which bypasses RLS) has access.
+CREATE TABLE client_applications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_name TEXT NOT NULL,
+  contact_name TEXT NOT NULL,
+  email TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  phone_secondary TEXT,
+  requested_municipality_ids UUID[] NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'pending',
+  rejection_reason TEXT,
+  reviewed_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  reviewed_at TIMESTAMPTZ,
+  created_company_id UUID REFERENCES collision_companies(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT client_applications_status_check
+    CHECK (status IN ('pending', 'approved', 'rejected'))
+);
+
+CREATE INDEX idx_client_applications_status
+  ON client_applications(status, created_at DESC);
+
+-- No policies is INTENTIONAL: RLS-enabled + zero policies = default-deny
+-- for anon/authenticated; only the service role (which bypasses RLS) has access.
+ALTER TABLE client_applications ENABLE ROW LEVEL SECURITY;
+
+-- 8. SMS_RECIPIENTS VIEW (n8n queries this to find who gets SMS)
 -- One row per phone number (primary + secondary if set).
 -- When test mode is active, only is_admin rows are returned.
 CREATE OR REPLACE VIEW sms_recipients AS
@@ -252,6 +284,10 @@ CREATE TRIGGER trg_subscriptions_updated
 
 CREATE TRIGGER trg_system_settings_updated
   BEFORE UPDATE ON system_settings
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+CREATE TRIGGER trg_client_applications_updated
+  BEFORE UPDATE ON client_applications
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- ============================================================
