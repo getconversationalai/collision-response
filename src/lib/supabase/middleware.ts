@@ -8,7 +8,12 @@ function getAdminIds(): string[] {
 
 // Public paths reachable without a session. `/auth/confirm` exchanges a
 // one-time token for a session, so it MUST be reachable while logged out.
-const PUBLIC_PREFIXES = ['/login', '/apply', '/auth/confirm']
+// `/set-password` is also public so the expired-link UI is reachable: an
+// expired token redirects to /set-password?error=expired with NO session,
+// which would otherwise be bounced to /login. That page renders the
+// set-password form only when a session exists, and the "request a fresh
+// link" state otherwise — so exposing it to anon traffic is safe.
+const PUBLIC_PREFIXES = ['/login', '/apply', '/auth/confirm', '/set-password']
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + '/'))
