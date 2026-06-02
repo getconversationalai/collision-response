@@ -49,6 +49,7 @@ export async function getPublicMunicipalities(): Promise<Municipality[]> {
     .select('*')
     .eq('is_active', true)
     .eq('admin_only', false)
+    .is('parent_id', null)        // top-level only — hide sub-municipalities (e.g. "Woodbury PD")
     .not('name', 'is', null)
     .neq('name', '')
     .order('name')

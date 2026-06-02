@@ -11,7 +11,7 @@ import { createClient } from '@/lib/supabase/client'
 
 const navItems = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/admin/applications', label: 'Applications', icon: FileText },
+  { href: '/admin/applications', label: 'Submissions', icon: FileText },
   { href: '/admin/clients', label: 'Clients', icon: Users },
   { href: '/admin/clients/new', label: 'Add Client', icon: UserPlus },
   { href: '/admin/municipalities', label: 'Municipalities', icon: MapPin },

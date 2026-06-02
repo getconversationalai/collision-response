@@ -77,9 +77,9 @@ export function applicationInviteEmail(args: {
   const forCompany = args.companyName
     ? ` for <strong style="color:${NAVY};">${escapeHtml(args.companyName)}</strong>`
     : ''
-  const intro = `${greeting}you're invited to join <strong style="color:${NAVY};">Collision Ping</strong> — real-time motor-vehicle-accident alerts delivered to your phone the moment they happen, so your collision center can be first on the scene. Complete a short application${forCompany} and we'll get you set up.`
+  const intro = `${greeting}you're invited to join <strong style="color:${NAVY};">Collision Ping</strong> — real-time motor-vehicle-accident alerts delivered to your phone the moment they happen, so your collision center can be first on the scene. Complete a quick sign-up${forCompany} and we'll get you set up.`
   const body = `
-    <div style="text-align:center;margin:6px 0 4px;">${button(args.applyUrl, 'Start your application')}</div>
+    <div style="text-align:center;margin:6px 0 4px;">${button(args.applyUrl, 'Start your sign-up')}</div>
     <p style="margin:22px 0 0;color:#9fb3c8;font-size:12.5px;line-height:1.6;">It only takes a minute — tell us about your company and choose the coverage areas you want alerts for.</p>`
   return {
     subject: `You're invited to Collision Ping`,
@@ -111,14 +111,14 @@ export function adminNotificationEmail(args: {
       ${infoRow('Phone', args.phoneDisplay)}
       ${infoRow('Coverage areas', areas)}
     </table>
-    <div style="text-align:center;">${button(args.reviewUrl, 'Review application')}</div>`
+    <div style="text-align:center;">${button(args.reviewUrl, 'Review submission')}</div>`
   return {
-    subject: `New application — ${args.companyName}`,
+    subject: `New submission — ${args.companyName}`,
     html: layout({
-      heading: 'New client application',
+      heading: 'New client submission',
       intro: `A new collision center has applied to Collision Ping. Review the details below and approve or decline in the admin portal.`,
       body,
-      preview: `New application from ${args.companyName}`,
+      preview: `New submission from ${args.companyName}`,
     }),
   }
 }
@@ -138,9 +138,9 @@ export function clientApprovedEmail(args: {
     subject: `You're approved — welcome to Collision Ping`,
     html: layout({
       heading: `Welcome, ${escapeHtml(args.companyName)}!`,
-      intro: `Your application has been approved.`,
+      intro: `Your submission has been approved.`,
       body,
-      preview: `Your Collision Ping application was approved`,
+      preview: `Your Collision Ping submission was approved`,
     }),
   }
 }
@@ -153,12 +153,12 @@ export function applicantRejectedEmail(args: {
     ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7fafc;border-radius:14px;margin-top:8px;"><tr><td style="padding:15px 18px;color:${NAVY};font-size:14px;line-height:1.6;"><strong>Reason:</strong> ${escapeHtml(args.reason)}</td></tr></table>`
     : ''
   return {
-    subject: `Update on your Collision Ping application`,
+    subject: `Update on your Collision Ping submission`,
     html: layout({
-      heading: 'Application update',
-      intro: `Thank you for your interest in Collision Ping. After review, we're unable to approve your application at this time.`,
+      heading: 'Submission update',
+      intro: `Thank you for your interest in Collision Ping. After review, we're unable to approve your submission at this time.`,
       body: `${reasonBlock}<p style="margin:22px 0 0;color:${MUTED};font-size:14px;line-height:1.65;">If you believe this was in error or your situation changes, please reach out to us.</p>`,
-      preview: `Update on your application`,
+      preview: `Update on your submission`,
     }),
   }
 }

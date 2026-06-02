@@ -40,9 +40,9 @@ export default function NotificationEmailsForm({ initialEmails }: { initialEmail
     <div className="glass-card-rich rounded-2xl p-6">
       <div className="flex items-center gap-2 mb-1">
         <Mail className="w-4 h-4 text-brand-500" />
-        <h3 className="text-base font-bold text-navy-800">Application notification emails</h3>
+        <h3 className="text-base font-bold text-navy-800">Submission notification emails</h3>
       </div>
-      <p className="text-xs text-navy-400 mb-5">These addresses receive an email each time a new application is submitted.</p>
+      <p className="text-xs text-navy-400 mb-5">These addresses receive an email each time a new submission comes in.</p>
 
       {/* Add row */}
       <div className="flex gap-2 mb-4">
@@ -59,7 +59,7 @@ export default function NotificationEmailsForm({ initialEmails }: { initialEmail
       {/* List */}
       {emails.length === 0 ? (
         <p className="text-sm text-navy-400 py-6 text-center bg-navy-50/40 rounded-xl mb-4">
-          No recipients yet. Add at least one so applications don&apos;t go unnoticed.
+          No recipients yet. Add at least one so submissions don&apos;t go unnoticed.
         </p>
       ) : (
         <div className="space-y-2 mb-5">

@@ -10,8 +10,8 @@ export default async function AdminApplicationsPage() {
     <div className="page-wrapper">
       <div className="flex flex-wrap items-start justify-between gap-4 mb-8">
         <div>
-          <h1 className="text-3xl font-extrabold gradient-text tracking-tight">Applications</h1>
-          <p className="text-sm text-navy-400 mt-1 font-medium">Review and approve new client applications.</p>
+          <h1 className="text-3xl font-extrabold gradient-text tracking-tight">Submissions</h1>
+          <p className="text-sm text-navy-400 mt-1 font-medium">Review and approve new client submissions.</p>
         </div>
         <InviteClientForm />
       </div>

@@ -1,7 +1,7 @@
 import ApplicationSuccess from '@/components/signup/ApplicationSuccess'
 
 export const metadata = {
-  title: 'Application received — Collision Ping',
+  title: 'Submission received — Collision Ping',
 }
 
 export default function ApplySuccessPage() {
