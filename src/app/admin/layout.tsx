@@ -10,7 +10,7 @@ function getAdminIds(): string[] {
 }
 
 export const metadata = {
-  title: 'Admin Portal — Collision Response',
+  title: 'Admin Portal — Collision Ping',
   description: 'Manage collision company clients',
 }
 

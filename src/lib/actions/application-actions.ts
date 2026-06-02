@@ -5,7 +5,7 @@ import { cookies } from 'next/headers'
 import { getAdminClient } from '@/lib/supabase/admin'
 import { validateApplicationInput, type RawApplicationInput } from '@/lib/applications/validation'
 import { resolveActivation, generateTempPassword } from '@/lib/applications/provisioning'
-import { adminNotificationEmail, clientApprovedEmail, applicantRejectedEmail } from '@/lib/email/templates'
+import { applicationInviteEmail, adminNotificationEmail, clientApprovedEmail, applicantRejectedEmail } from '@/lib/email/templates'
 import { sendEmail } from '@/lib/email/send'
 import { formatPhoneDisplay } from '@/lib/phone'
 import type { Municipality, ClientApplication, CollisionCompany, ApplicationStatus } from '@/lib/types'
@@ -484,4 +484,36 @@ export async function updateNotificationEmails(emails: string[]): Promise<{ ok: 
     .upsert({ id: 1, notification_emails: cleaned })
   if (error) throw new Error(error.message)
   return { ok: true, emails: cleaned }
+}
+
+// ---------------------------------------------------------------------------
+// Admin: invite a prospect to apply (emails a pre-filled /signup link)
+// ---------------------------------------------------------------------------
+
+export type SendInviteInput = { email: string; contactName?: string; companyName?: string }
+export type SendInviteResult = { ok: boolean; message?: string }
+
+export async function sendApplicationInvite(input: SendInviteInput): Promise<SendInviteResult> {
+  await requireAdmin()
+
+  const email = (input.email ?? '').trim().toLowerCase()
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error('Please enter a valid email address')
+  }
+  const contactName = input.contactName?.trim() || null
+  const companyName = input.companyName?.trim() || null
+
+  // Build a /signup link that pre-fills the form for this prospect.
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const params = new URLSearchParams({ email })
+  if (contactName) params.set('name', contactName)
+  if (companyName) params.set('company', companyName)
+  const applyUrl = `${appUrl}/signup?${params.toString()}`
+
+  const { subject, html } = applicationInviteEmail({ contactName, companyName, applyUrl })
+  const res = await sendEmail({ to: email, subject, html })
+  if (!res.ok) {
+    return { ok: false, message: 'The invite email could not be sent. Check the Resend configuration.' }
+  }
+  return { ok: true }
 }

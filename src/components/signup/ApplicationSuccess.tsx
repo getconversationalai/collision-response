@@ -26,7 +26,7 @@ export default function ApplicationSuccess() {
 
       <h1 className="text-2xl font-extrabold gradient-text mb-2">Application received!</h1>
       <p className="text-navy-400 text-sm mb-8">
-        Thanks for applying to Collision Response. Your application has been sent to our team for review.
+        Thanks for applying to Collision Ping. Your application has been sent to our team for review.
       </p>
 
       <div className="glass-card-rich rounded-2xl p-6 text-left space-y-4">

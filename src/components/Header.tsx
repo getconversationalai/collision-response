@@ -60,7 +60,7 @@ export default function Header({ companyName }: { companyName: string }) {
               </div>
             </div>
             <div className="hidden sm:block">
-              <h1 className="text-sm font-bold gradient-text tracking-tight leading-none">Collision Response</h1>
+              <h1 className="text-sm font-bold gradient-text tracking-tight leading-none">Collision Ping</h1>
               <p className="text-[11px] text-navy-400 leading-none mt-1 font-medium">{companyName}</p>
             </div>
           </div>

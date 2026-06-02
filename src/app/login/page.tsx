@@ -1,8 +1,10 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import AuthTabs from '@/components/AuthTabs'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -54,12 +56,14 @@ export default function LoginPage() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
             </svg>
           </div>
-          <h1 className="text-3xl font-extrabold gradient-text tracking-tight">Collision Response</h1>
+          <h1 className="text-3xl font-extrabold gradient-text tracking-tight">Collision Ping</h1>
           <p className="text-sm text-navy-400 mt-2 font-medium">Sign in to manage your subscriptions</p>
         </div>
 
         {/* Login card */}
         <div className="glass-card-rich rounded-2xl p-8 space-y-6">
+          <AuthTabs active="login" />
+
           {error && (
             <div className="animate-fade-in-down flex items-start gap-3 bg-gradient-to-r from-red-50 to-red-50/50 border border-red-200/60 text-red-700 text-sm rounded-xl px-4 py-3.5">
               <div className="flex items-center justify-center w-5 h-5 rounded-full bg-red-100 shrink-0 mt-0.5">
@@ -148,8 +152,11 @@ export default function LoginPage() {
           </form>
         </div>
 
-        <p className="text-center text-xs text-navy-400/60 mt-8 animate-fade-in" style={{ animationDelay: '0.5s', animationFillMode: 'both' }}>
-          Need an account? Contact your administrator.
+        <p className="text-center text-xs text-navy-400/70 mt-8 animate-fade-in" style={{ animationDelay: '0.5s', animationFillMode: 'both' }}>
+          Need an account?{' '}
+          <Link href="/signup" className="text-brand-600 font-semibold hover:text-brand-700 transition-colors">
+            Sign up
+          </Link>
         </p>
       </div>
     </div>

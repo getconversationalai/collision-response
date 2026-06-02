@@ -9,7 +9,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Collision Response",
+  title: "Collision Ping",
   description: "Manage your MVA notification subscriptions",
 };
 

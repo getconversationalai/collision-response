@@ -1,4 +1,4 @@
-# Collision Response
+# Collision Ping
 
 Client portal for auto collision companies to manage their MVA (Motor Vehicle Accident) SMS notification subscriptions.
 
@@ -32,11 +32,11 @@ Deploy to Vercel. Set the environment variables in your Vercel project settings.
 
 ## Client Self-Signup
 
-Prospects can apply at the public `/apply` link (no login required). Approved clients are provisioned automatically and emailed a set-password link.
+Prospects can apply at the public `/signup` link (no login required). Approved clients are provisioned automatically and emailed a set-password link.
 
 **How it works:**
 
-- **Public apply page** — Share `https://collisionping.com/apply` with prospects. They fill out company info and choose coverage areas. Submissions land as `pending` rows in `client_applications`; no auth user or `collision_companies` row is created until an admin approves.
+- **Public apply page** — Share `https://collisionping.com/signup` with prospects. They fill out company info and choose coverage areas. Submissions land as `pending` rows in `client_applications`; no auth user or `collision_companies` row is created until an admin approves.
 - **Admin notifications** — Go to `/admin/settings` to add the email addresses that receive "new application" notifications. The list starts empty; until at least one address is added, the new-application email is skipped and submissions only appear in the in-portal list at `/admin/applications`.
 - **Approval flow** — Open `/admin/applications/<id>` to review a submission. Two paths:
   - **Comp** — Check "Comp this client" at approval. The client account is immediately active (`billing_status='comped'`, `is_active=true`); no card is ever required.
@@ -46,7 +46,7 @@ Prospects can apply at the public `/apply` link (no login required). Approved cl
 - **Resend setup (required for any email):**
   1. In the Resend dashboard (https://resend.com/domains), add your sending domain, e.g. `mail.yourdomain.com`.
   2. Add the DNS records Resend shows (SPF/MX, DKIM TXT, and return-path) at your DNS provider and wait for verification.
-  3. Set `RESEND_API_KEY` and `RESEND_FROM` (e.g. `Collision Response <noreply@mail.yourdomain.com>` — the domain must match the verified one).
+  3. Set `RESEND_API_KEY` and `RESEND_FROM` (e.g. `Collision Ping <noreply@mail.yourdomain.com>` — the domain must match the verified one).
   4. If the domain is unverified or the keys are missing, sends fail silently; the app logs the failure and surfaces a "Resend email" affordance on the review page, but never blocks the DB write or the applicant's success page.
 
 ## Stripe Billing

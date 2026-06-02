@@ -13,7 +13,7 @@ function getAdminIds(): string[] {
 // which would otherwise be bounced to /login. That page renders the
 // set-password form only when a session exists, and the "request a fresh
 // link" state otherwise — so exposing it to anon traffic is safe.
-const PUBLIC_PREFIXES = ['/login', '/apply', '/auth/confirm', '/set-password']
+const PUBLIC_PREFIXES = ['/login', '/signup', '/apply', '/auth/confirm', '/set-password']
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + '/'))
