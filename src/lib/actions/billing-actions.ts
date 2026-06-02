@@ -285,9 +285,16 @@ async function loadBillingState(company: CollisionCompany): Promise<BillingState
     getSystemDefaultPriceCents(),
   ])
 
+  // is_comped is the single source of truth for "comped" — coerce the status
+  // to match so the UI can't drift if billing_status was left out of sync
+  // (e.g. is_comped was set directly in the DB).
+  const effectiveStatus: BillingStatus = company.is_comped
+    ? 'comped'
+    : company.billing_status
+
   return {
     companyId: company.id,
-    billingStatus: company.billing_status,
+    billingStatus: effectiveStatus,
     isComped: company.is_comped,
     isActive: company.is_active,
     currentPeriodEnd: company.current_period_end,
