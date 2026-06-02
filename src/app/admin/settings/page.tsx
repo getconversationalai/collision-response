@@ -9,7 +9,7 @@ export default async function AdminSettingsPage() {
     <div className="page-wrapper max-w-2xl">
       <div className="mb-8">
         <h1 className="text-3xl font-extrabold gradient-text tracking-tight">Settings</h1>
-        <p className="text-sm text-navy-400 mt-1 font-medium">Configure who gets notified about new applications.</p>
+        <p className="text-sm text-navy-400 mt-1 font-medium">Configure who gets notified about new submissions.</p>
       </div>
       <NotificationEmailsForm initialEmails={emails} />
     </div>

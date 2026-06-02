@@ -48,7 +48,7 @@ export default function ApplicationsTable({ applications }: { applications: Clie
       </div>
 
       {rows.length === 0 ? (
-        <p className="text-center text-sm text-navy-400 py-12">No applications match.</p>
+        <p className="text-center text-sm text-navy-400 py-12">No submissions match.</p>
       ) : (
         <div className="space-y-2">
           {rows.map((a, i) => (

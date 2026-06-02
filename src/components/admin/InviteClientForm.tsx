@@ -104,7 +104,7 @@ export default function InviteClientForm() {
             {loading ? <><Loader2 className="w-4 h-4 animate-spin" /> Sending&hellip;</> : <><Send className="w-4 h-4" /> Send invite</>}
           </button>
           <p className="text-[11px] text-navy-400 leading-relaxed">
-            Sends a branded Collision Ping email with a link that pre-fills their application.
+            Sends a branded Collision Ping email with a link that pre-fills their sign-up form.
           </p>
         </div>
       )}

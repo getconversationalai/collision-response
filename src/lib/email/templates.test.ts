@@ -49,7 +49,7 @@ test('rejection includes reason when provided', () => {
 
 test('rejection omits reason block when absent', () => {
   const e = applicantRejectedEmail({ companyName: 'ABC', reason: null })
-  expect(e.subject).toMatch(/ABC|application/i)
+  expect(e.subject).toMatch(/submission/i)
   expect(e.html).not.toContain('Reason:')
 })
 

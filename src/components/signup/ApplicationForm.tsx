@@ -206,7 +206,7 @@ export default function ApplicationForm({
                   </div>
                 </div>
                 <p className="text-xs text-navy-400 leading-relaxed">
-                  By submitting, you agree we may contact you about your application. An admin will review and email you next steps.
+                  By submitting, you agree we may contact you about your submission. An admin will review and email you next steps.
                 </p>
               </div>
             </div>
@@ -225,7 +225,7 @@ export default function ApplicationForm({
           </button>
         ) : (
           <button type="button" onClick={handleSubmit} disabled={loading} className="btn-primary flex items-center gap-2 px-8">
-            {loading ? (<><Loader2 className="w-4 h-4 animate-spin" /> Submitting...</>) : (<>Submit application <ArrowRight className="w-4 h-4" /></>)}
+            {loading ? (<><Loader2 className="w-4 h-4 animate-spin" /> Submitting...</>) : (<>Submit <ArrowRight className="w-4 h-4" /></>)}
           </button>
         )}
       </div>

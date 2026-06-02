@@ -77,7 +77,7 @@ export default function ApplicationReview({ detail }: { detail: ApplicationDetai
   return (
     <div className="page-wrapper max-w-3xl">
       <Link href="/admin/applications" className="inline-flex items-center gap-1.5 text-sm text-navy-400 hover:text-navy-600 mb-6 font-medium">
-        <ArrowLeft className="w-4 h-4" /> Back to applications
+        <ArrowLeft className="w-4 h-4" /> Back to submissions
       </Link>
 
       <div className="flex items-start justify-between mb-6">
@@ -217,9 +217,9 @@ export default function ApplicationReview({ detail }: { detail: ApplicationDetai
           <div className="inline-flex w-14 h-14 rounded-full bg-navy-100 items-center justify-center mb-3">
             <X className="w-7 h-7 text-navy-500" />
           </div>
-          <p className="text-base font-bold text-navy-800">Application rejected</p>
+          <p className="text-base font-bold text-navy-800">Submission rejected</p>
           <p className="text-sm text-navy-400 mt-1">The applicant has been emailed a courteous decline.</p>
-          <Link href="/admin/applications" className="btn-secondary inline-flex mt-4">Back to applications</Link>
+          <Link href="/admin/applications" className="btn-secondary inline-flex mt-4">Back to submissions</Link>
         </div>
       )}
 
@@ -231,7 +231,7 @@ export default function ApplicationReview({ detail }: { detail: ApplicationDetai
             {a.status === 'approved' ? <Check className="w-7 h-7 text-emerald-600" /> : <X className="w-7 h-7 text-navy-500" />}
           </div>
           <p className="text-base font-bold text-navy-800">
-            {a.status === 'approved' ? 'Application approved' : 'Application rejected'}
+            {a.status === 'approved' ? 'Submission approved' : 'Submission rejected'}
           </p>
           <p className="text-sm text-navy-400 mt-1">
             {a.status === 'approved'
