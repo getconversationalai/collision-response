@@ -3,28 +3,23 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
-  LayoutDashboard,
-  Users,
-  UserPlus,
-  MapPin,
-  CreditCard,
-  Shield,
-  Menu,
-  X,
-  LogOut,
+  LayoutDashboard, Users, UserPlus, MapPin, CreditCard, Shield,
+  FileText, Settings, Menu, X, LogOut,
 } from 'lucide-react'
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 const navItems = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/admin/applications', label: 'Applications', icon: FileText },
   { href: '/admin/clients', label: 'Clients', icon: Users },
   { href: '/admin/clients/new', label: 'Add Client', icon: UserPlus },
   { href: '/admin/municipalities', label: 'Municipalities', icon: MapPin },
   { href: '/admin/billing', label: 'Billing', icon: CreditCard },
+  { href: '/admin/settings', label: 'Settings', icon: Settings },
 ]
 
-export default function AdminSidebar() {
+export default function AdminSidebar({ pendingApplications = 0 }: { pendingApplications?: number }) {
   const pathname = usePathname()
   const router = useRouter()
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -129,9 +124,13 @@ export default function AdminSidebar() {
                   }`}
                 />
                 {item.label}
-                {active && (
+                {item.href === '/admin/applications' && pendingApplications > 0 ? (
+                  <span className="ml-auto inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-bold bg-brand-500 text-white">
+                    {pendingApplications}
+                  </span>
+                ) : active ? (
                   <div className="ml-auto w-1.5 h-1.5 rounded-full bg-brand-500 animate-pulse-soft" />
-                )}
+                ) : null}
               </Link>
             )
           })}
