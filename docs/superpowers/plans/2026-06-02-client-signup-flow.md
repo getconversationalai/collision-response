@@ -177,6 +177,8 @@ CREATE TRIGGER trg_client_applications_updated
 -- server-side via the service-role client, which bypasses RLS. No
 -- policy is granted to anon/authenticated, so the browser client
 -- can never read or write applications.
+-- No policies is INTENTIONAL: RLS-enabled + zero policies = default-deny
+-- for anon/authenticated; only the service role (which bypasses RLS) has access.
 ALTER TABLE client_applications ENABLE ROW LEVEL SECURITY;
 
 -- system_settings — configurable admin notification recipients
@@ -252,7 +254,7 @@ In the `Database['public']['Tables']` object in `src/lib/types.ts`, add a `clien
           reviewed_at?: string | null
           created_company_id?: string | null
           phone_secondary?: string | null
-          requested_municipality_ids?: string[]
+          requested_municipality_ids: string[]   // required: validation always supplies ≥1
         }
         Update: Partial<Omit<ClientApplication, 'id'>>
         Relationships: []
@@ -664,8 +666,11 @@ export async function sendEmail({ to, subject, html }: SendEmailInput): Promise<
     return { ok: false, error: 'email_not_configured' }
   }
 
-  const recipients = (Array.isArray(to) ? to : [to]).filter(Boolean)
-  if (recipients.length === 0) return { ok: false, error: 'no_recipients' }
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  const recipients = (Array.isArray(to) ? to : [to])
+    .map((r) => r.trim())
+    .filter((r) => EMAIL_RE.test(r))
+  if (recipients.length === 0) return { ok: false, error: 'no_valid_recipients' }
 
   try {
     const res = await fetch('https://api.resend.com/emails', {
@@ -720,7 +725,7 @@ test('admin notification includes company + review link', () => {
 test('client approved (pay) prompts to add card and links setup', () => {
   const e = clientApprovedEmail({
     companyName: 'ABC Collision',
-    setupUrl: 'https://app.example.com/auth/confirm?token_hash=x&type=recovery&next=/set-password',
+    setupUrl: 'https://app.example.com/auth/confirm?token_hash=x&type=magiclink&next=/set-password',
     comped: false,
   })
   expect(e.subject).toMatch(/approv/i)
@@ -731,7 +736,7 @@ test('client approved (pay) prompts to add card and links setup', () => {
 test('client approved (comped) says active, no payment', () => {
   const e = clientApprovedEmail({
     companyName: 'ABC Collision',
-    setupUrl: 'https://app.example.com/auth/confirm?token_hash=y&type=recovery&next=/set-password',
+    setupUrl: 'https://app.example.com/auth/confirm?token_hash=y&type=magiclink&next=/set-password',
     comped: true,
   })
   expect(e.html).toContain('token_hash=y')
@@ -747,6 +752,12 @@ test('rejection omits reason block when absent', () => {
   const e = applicantRejectedEmail({ companyName: 'ABC', reason: null })
   expect(e.subject).toMatch(/ABC|application/i)
   expect(e.html).not.toContain('Reason:')
+})
+
+test('rejection escapes HTML in the reason (no XSS)', () => {
+  const e = applicantRejectedEmail({ companyName: 'ABC', reason: '<script>alert(1)</script>' })
+  expect(e.html).not.toContain('<script>')
+  expect(e.html).toContain('&lt;script&gt;')
 })
 ```
 
@@ -943,7 +954,7 @@ export type SubmitApplicationInput = RawApplicationInput & { honeypot?: string }
 
 export type SubmitApplicationResult =
   | { ok: true }
-  | { ok: false; reason: 'validation' | 'duplicate_active' | 'error'; errors?: string[]; message?: string }
+  | { ok: false; reason: 'validation' | 'duplicate_active' | 'duplicate_pending' | 'error'; errors?: string[]; message?: string }
 
 export async function submitApplication(
   input: SubmitApplicationInput
@@ -971,6 +982,25 @@ export async function submitApplication(
       ok: false,
       reason: 'duplicate_active',
       message: 'An account already exists for this email. Please log in instead.',
+    }
+  }
+
+  // Guard: a pending application already exists with this email → avoid
+  // duplicate submissions flooding the admin queue. (Heavier abuse protection
+  // — IP rate limiting / Cloudflare Turnstile — is a documented future
+  // enhancement; the honeypot + this guard + the admin-review gate are
+  // proportionate for now.)
+  const { data: existingPending } = await admin
+    .from('client_applications')
+    .select('id')
+    .eq('email', v.email)
+    .eq('status', 'pending')
+    .limit(1)
+  if (existingPending && existingPending.length > 0) {
+    return {
+      ok: false,
+      reason: 'duplicate_pending',
+      message: 'An application with this email is already under review. We’ll be in touch by email soon.',
     }
   }
 
@@ -1671,12 +1701,16 @@ Append to `src/lib/actions/application-actions.ts`:
 async function buildSetupUrl(email: string): Promise<string> {
   const admin = getAdminClient()
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
-  const { data, error } = await admin.auth.admin.generateLink({ type: 'recovery', email })
+  // Use 'magiclink': the user is brand-new, and magiclink is the type
+  // designed for click-a-link-to-get-a-session via the token_hash + verifyOtp
+  // SSR pattern. The resulting full session permits updateUser({ password }),
+  // so the client can set a password immediately on /set-password.
+  const { data, error } = await admin.auth.admin.generateLink({ type: 'magiclink', email })
   if (error || !data?.properties?.hashed_token) {
     throw new Error(`Failed to generate login link: ${error?.message ?? 'unknown'}`)
   }
   const tokenHash = data.properties.hashed_token
-  return `${appUrl}/auth/confirm?token_hash=${tokenHash}&type=recovery&next=/set-password`
+  return `${appUrl}/auth/confirm?token_hash=${tokenHash}&type=magiclink&next=/set-password`
 }
 
 export async function approveApplication(
@@ -1702,7 +1736,19 @@ export async function approveApplication(
     (settings as { default_monthly_price_cents: number } | null)?.default_monthly_price_cents ?? 5000
   const activation = resolveActivation({ comp: opts.comp, priceCents: opts.priceCents, defaultPriceCents })
 
-  // 1. Create the auth user (random temp password; client sets their own).
+  // Defensive: re-validate the stored email before the external auth call.
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(application.email)) {
+    throw new Error(`Invalid email in application record: ${application.email}`)
+  }
+
+  // 1. Create the auth user with a random temporary password.
+  // email_confirm: true marks the email verified without sending Supabase's
+  // own email. The client never sees or uses this password — they set their
+  // own via the magic link emailed in step 5. The Supabase admin API requires
+  // a password, so we generate a throwaway one.
+  // Race backstop: if two admins approve simultaneously, the second createUser
+  // fails here because the email already exists (auth emails are unique), so
+  // no duplicate client is provisioned even without a DB row lock.
   const { data: authData, error: authError } = await admin.auth.admin.createUser({
     email: application.email,
     password: generateTempPassword(),
@@ -1736,13 +1782,20 @@ export async function approveApplication(
   }
   const company = companyData as unknown as CollisionCompany
 
-  // 3. Subscriptions for requested municipalities (non-fatal on failure).
+  // 3. Subscriptions for requested municipalities. The applicant specifically
+  // chose these coverage areas, so a failure here rolls the whole approval back
+  // (delete company + auth user) and leaves the application 'pending' to retry —
+  // rather than provisioning a client with no coverage.
   if (application.requested_municipality_ids.length > 0) {
     const rows = application.requested_municipality_ids.map((municipality_id) => ({
       company_id: company.id, municipality_id, is_subscribed: true,
     }))
     const { error: subErr } = await admin.from('subscriptions').insert(rows)
-    if (subErr) console.error('[applications] subscription insert failed:', subErr.message)
+    if (subErr) {
+      await admin.from('collision_companies').delete().eq('id', company.id)
+      await admin.auth.admin.deleteUser(authUserId)
+      throw new Error(`Failed to create subscriptions: ${subErr.message}`)
+    }
   }
 
   // 4. Mark the application approved.
@@ -1792,7 +1845,10 @@ export async function resendApprovalEmail(id: string): Promise<{ ok: boolean }> 
 // Admin: reject
 // ---------------------------------------------------------------------------
 
-export async function rejectApplication(id: string, reason?: string): Promise<{ ok: true }> {
+export async function rejectApplication(
+  id: string,
+  reason?: string
+): Promise<{ ok: true; emailSent: boolean }> {
   const adminUserId = await requireAdmin()
   const admin = getAdminClient()
 
@@ -1813,14 +1869,33 @@ export async function rejectApplication(id: string, reason?: string): Promise<{ 
   }).eq('id', id)
 
   // Courteous decline email (best-effort).
+  let emailSent = false
   try {
     const { subject, html } = applicantRejectedEmail({ companyName: application.company_name, reason: cleanReason })
-    await sendEmail({ to: application.email, subject, html })
+    const res = await sendEmail({ to: application.email, subject, html })
+    emailSent = res.ok
   } catch (e) {
     console.error('[applications] rejection email failed:', e)
   }
 
-  return { ok: true }
+  return { ok: true, emailSent }
+}
+
+export async function resendRejectionEmail(id: string): Promise<{ ok: boolean }> {
+  await requireAdmin()
+  const admin = getAdminClient()
+  const { data, error } = await admin
+    .from('client_applications').select('*').eq('id', id).single()
+  if (error || !data) throw new Error('Application not found')
+  const application = data as unknown as ClientApplication
+  if (application.status !== 'rejected') throw new Error('Application is not rejected')
+
+  const { subject, html } = applicantRejectedEmail({
+    companyName: application.company_name,
+    reason: application.rejection_reason,
+  })
+  const res = await sendEmail({ to: application.email, subject, html })
+  return { ok: res.ok }
 }
 
 // ---------------------------------------------------------------------------
@@ -2106,7 +2181,7 @@ import Link from 'next/link'
 import {
   ArrowLeft, Building2, User, Mail, Phone, MapPin, Check, X, Loader2, Gift, CreditCard,
 } from 'lucide-react'
-import { approveApplication, rejectApplication } from '@/lib/actions/application-actions'
+import { approveApplication, rejectApplication, resendApprovalEmail, resendRejectionEmail } from '@/lib/actions/application-actions'
 import { formatPhoneDisplay } from '@/lib/phone'
 import type { ApplicationDetail } from '@/lib/actions/application-actions'
 
@@ -2122,6 +2197,8 @@ export default function ApplicationReview({ detail }: { detail: ApplicationDetai
   const [loading, setLoading] = useState<'approve' | 'reject' | null>(null)
   const [error, setError] = useState('')
   const [done, setDone] = useState<'approved' | 'rejected' | null>(null)
+  const [resending, setResending] = useState(false)
+  const [resent, setResent] = useState(false)
 
   async function handleApprove() {
     setLoading('approve'); setError('')
@@ -2129,7 +2206,7 @@ export default function ApplicationReview({ detail }: { detail: ApplicationDetai
       const priceCents = comp ? null : Math.round(parseFloat(priceDollars || '0') * 100)
       const res = await approveApplication(a.id, { priceCents, comp })
       setDone('approved')
-      if (!res.emailSent) setError('Approved, but the welcome email could not be sent. You can resend it from the client record.')
+      if (!res.emailSent) setError('Approved, but the welcome email could not be sent. Use “Resend email” below.')
       else router.refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to approve')
@@ -2141,13 +2218,27 @@ export default function ApplicationReview({ detail }: { detail: ApplicationDetai
   async function handleReject() {
     setLoading('reject'); setError('')
     try {
-      await rejectApplication(a.id, reason)
+      const res = await rejectApplication(a.id, reason)
       setDone('rejected')
-      router.refresh()
+      if (!res.emailSent) setError('Rejected, but the decline email could not be sent. Use “Resend email” below.')
+      else router.refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to reject')
     } finally {
       setLoading(null)
+    }
+  }
+
+  async function handleResend() {
+    setResending(true); setError('')
+    try {
+      const res = done === 'rejected' ? await resendRejectionEmail(a.id) : await resendApprovalEmail(a.id)
+      if (res.ok) setResent(true)
+      else setError('Could not resend the email. Please try again.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not resend the email.')
+    } finally {
+      setResending(false)
     }
   }
 
@@ -2187,8 +2278,20 @@ export default function ApplicationReview({ detail }: { detail: ApplicationDetai
       </div>
 
       {error && (
-        <div className="mb-5 flex items-start gap-3 bg-gold-50/80 border border-gold-200/60 text-gold-800 text-sm rounded-xl px-4 py-3.5">
-          <span className="font-medium">{error}</span>
+        <div className="mb-5 flex items-center gap-3 bg-gold-50/80 border border-gold-200/60 text-gold-800 text-sm rounded-xl px-4 py-3.5">
+          <span className="font-medium flex-1">{error}</span>
+          {done && (
+            <button onClick={handleResend} disabled={resending}
+              className="btn-secondary px-3 py-1.5 text-xs whitespace-nowrap flex items-center gap-1.5">
+              {resending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Resend email'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {resent && (
+        <div className="mb-5 flex items-center gap-2 bg-emerald-50/80 border border-emerald-200/60 text-emerald-700 text-sm rounded-xl px-4 py-3">
+          <Check className="w-4 h-4" /> <span className="font-medium">Email resent.</span>
         </div>
       )}
 
@@ -2274,6 +2377,17 @@ export default function ApplicationReview({ detail }: { detail: ApplicationDetai
           {detail.application.created_company_id && (
             <Link href={`/admin/clients/${detail.application.created_company_id}`} className="btn-secondary inline-flex mt-4">View client record</Link>
           )}
+        </div>
+      )}
+
+      {done === 'rejected' && (
+        <div className="glass-card-rich rounded-2xl p-6 text-center">
+          <div className="inline-flex w-14 h-14 rounded-full bg-navy-100 items-center justify-center mb-3">
+            <X className="w-7 h-7 text-navy-500" />
+          </div>
+          <p className="text-base font-bold text-navy-800">Application rejected</p>
+          <p className="text-sm text-navy-400 mt-1">The applicant has been emailed a courteous decline.</p>
+          <Link href="/admin/applications" className="btn-secondary inline-flex mt-4">Back to applications</Link>
         </div>
       )}
     </div>
@@ -2449,6 +2563,8 @@ git commit -m "feat(admin): settings page to manage notification emails"
 ---
 
 ## Task 15: Auth confirm route + set-password page
+
+> **PREREQUISITE:** Task 8 (middleware public allowlist) MUST be done before this task. The approval email link lands the logged-out client on `/auth/confirm?token_hash=...`; without `/auth/confirm` in the public allowlist, the middleware redirects that token-bearing request to `/login` before the route runs, and the token is never exchanged for a session — breaking the entire set-password flow. The route reads `type` from the query string (`magiclink`), so it stays in sync with `buildSetupUrl` automatically.
 
 **Files:**
 - Create: `src/app/auth/confirm/route.ts`, `src/app/set-password/page.tsx`, `src/components/SetPasswordForm.tsx`
@@ -2640,7 +2756,16 @@ RESEND_FROM="Collision Response <noreply@mail.yourdomain.com>"
 
 - [ ] **Step 2: README setup notes**
 
-Add a short "Client self-signup" section to `README.md` documenting: the public `/apply` link is what you share with prospects; admins must add notification recipients at `/admin/settings`; Resend requires `RESEND_API_KEY` + a verified domain in `RESEND_FROM`; and the approval flow (pending → client pays, or comp at approval). Also note that migration `005_client_applications.sql` must be applied to Supabase.
+Add a short "Client self-signup" section to `README.md` documenting:
+- The public `/apply` link is what you share with prospects.
+- Admins must add notification recipients at `/admin/settings` (the list starts empty; until at least one address is added, the new-application email is skipped and only the in-portal list reflects submissions).
+- The approval flow: pending → client pays via the existing Stripe Checkout, or comp at approval for immediate activation.
+- Migration `005_client_applications.sql` must be applied to Supabase.
+- **Resend setup (required for any email):**
+  1. In the Resend dashboard (https://resend.com/domains), add your sending domain, e.g. `mail.yourdomain.com`.
+  2. Add the DNS records Resend shows (SPF/`MX`, DKIM `TXT`, and return-path) at your DNS provider and wait for verification.
+  3. Set `RESEND_API_KEY` and `RESEND_FROM` (e.g. `Collision Response <noreply@mail.yourdomain.com>` — the domain must match the verified one).
+  4. If the domain is unverified or the keys are missing, sends fail; the app logs the failure and surfaces a "Resend email" affordance on the review page, but never blocks the DB write or the applicant's success page.
 
 - [ ] **Step 3: Set real local env values + restart**
 
@@ -2658,6 +2783,8 @@ Run through the entire flow and confirm each checkpoint:
 6. Repeat once choosing **Comp** at approval: the client email says "active"; after set-password they land on `/dashboard`; `billing_status='comped'`, `is_active=true`, no card needed.
 7. Reject an application with a reason → applicant receives the decline email; status `rejected`.
 8. Re-open an already-approved application and confirm **Approve** is a no-op error ("already approved").
+9. **admin_only exclusion:** mark a municipality `admin_only=true` in the admin portal, then reload `/apply` → it does NOT appear in the coverage-area grid.
+10. **Duplicate pending:** submit `/apply` twice with the same email while the first is still pending → the second is rejected with the "already under review" message (no duplicate row).
 
 - [ ] **Step 5: Full typecheck, lint, unit tests, build**
 
@@ -2696,3 +2823,20 @@ git commit -m "docs: Resend env + client self-signup setup notes"
 **Placeholder scan** — no TBD/TODO; every code step contains complete code. The only intentional human-supplied values are real secrets/domain in `.env.local` (Task 16 Step 3) and the prose README section (Task 16 Step 2).
 
 **Ordering** — foundation (1–6) → public submit + gate (7–10) → admin (11–14) → client login (15) → env/E2E (16). Approval (Task 11/13) depends on email (6) and provisioning (5); all dependencies precede their use.
+
+---
+
+## Adversarial review applied (2026-06-02)
+
+A four-lens review (type consistency, spec coverage, runtime correctness, security/data) with independent verification ran against this plan. Confirmed fixes folded in above:
+
+- **Critical:** set-password link changed from `recovery` to `magiclink` (unambiguous click-to-session via `token_hash`/`verifyOtp`); Task 8 marked an explicit prerequisite of Task 15 so `/auth/confirm` is reachable while logged out.
+- **Integrity:** approval now fully rolls back (delete company + auth user) if the subscription insert fails; duplicate-pending-application guard added to `submitApplication`; defensive email re-validation + duplicate-email race-backstop comment in `approveApplication`.
+- **Spec alignment / UX:** `resendApprovalEmail` + `resendRejectionEmail` wired to a "Resend email" button on the review page; rejection now returns `emailSent` and has a done state; recipient-format validation in `sendEmail`; `requested_municipality_ids` required in the Insert type; HTML-escaping test for rejection reason; expanded Resend domain-verification docs; E2E checkpoints for `admin_only` exclusion and duplicate-pending.
+
+**Consciously deferred (not silently dropped)** — disproportionate for a two-admin internal tool today; revisit if scale/threat model changes:
+
+- `system_settings` change-audit table for `notification_emails`.
+- IP-based rate limiting / Cloudflare Turnstile on `/apply` (a marked seam exists; honeypot + duplicate-pending guard + admin-review gate cover the realistic cases now).
+- Email retry queue / dead-letter / failure-rate alerting (the manual "Resend email" affordance covers recovery).
+- Randomized honeypot field name + submission-timing heuristics.
