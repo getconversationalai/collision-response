@@ -29,7 +29,11 @@ export default function ApplicationReview({ detail }: { detail: ApplicationDetai
   async function handleApprove() {
     setLoading('approve'); setError('')
     try {
-      const priceCents = comp ? null : Math.round(parseFloat(priceDollars || '0') * 100)
+      // Blank price falls back to the system default (resolveActivation uses
+      // defaultPriceCents when priceCents is null); comp ignores price entirely.
+      const priceCents = comp || priceDollars.trim() === ''
+        ? null
+        : Math.round(parseFloat(priceDollars) * 100)
       const res = await approveApplication(a.id, { priceCents, comp })
       setCompanyId(res.companyId)
       setDone('approved')
@@ -59,7 +63,8 @@ export default function ApplicationReview({ detail }: { detail: ApplicationDetai
   async function handleResend() {
     setResending(true); setError('')
     try {
-      const res = done === 'rejected' ? await resendRejectionEmail(a.id) : await resendApprovalEmail(a.id)
+      const flow = done ?? a.status   // works for in-session actions and revisits
+      const res = flow === 'rejected' ? await resendRejectionEmail(a.id) : await resendApprovalEmail(a.id)
       if (res.ok) { setResent(true); setError('') }
       else setError('Could not resend the email. Please try again.')
     } catch (err) {
@@ -215,6 +220,34 @@ export default function ApplicationReview({ detail }: { detail: ApplicationDetai
           <p className="text-base font-bold text-navy-800">Application rejected</p>
           <p className="text-sm text-navy-400 mt-1">The applicant has been emailed a courteous decline.</p>
           <Link href="/admin/applications" className="btn-secondary inline-flex mt-4">Back to applications</Link>
+        </div>
+      )}
+
+      {/* Revisiting an already-reviewed application (e.g. a second click of the
+          email link): show the outcome + a persistent way to resend the email. */}
+      {!done && a.status !== 'pending' && (
+        <div className="glass-card-rich rounded-2xl p-6 text-center">
+          <div className={`inline-flex w-14 h-14 rounded-full items-center justify-center mb-3 ${a.status === 'approved' ? 'bg-emerald-100' : 'bg-navy-100'}`}>
+            {a.status === 'approved' ? <Check className="w-7 h-7 text-emerald-600" /> : <X className="w-7 h-7 text-navy-500" />}
+          </div>
+          <p className="text-base font-bold text-navy-800">
+            {a.status === 'approved' ? 'Application approved' : 'Application rejected'}
+          </p>
+          <p className="text-sm text-navy-400 mt-1">
+            {a.status === 'approved'
+              ? 'The client was emailed a link to set their password and log in.'
+              : 'The applicant was emailed a courteous decline.'}
+            {a.reviewed_at ? ` Reviewed ${new Date(a.reviewed_at).toLocaleDateString()}.` : ''}
+          </p>
+          <div className="flex items-center justify-center gap-3 mt-4">
+            {a.status === 'approved' && a.created_company_id && (
+              <Link href={`/admin/clients/${a.created_company_id}`} className="btn-secondary inline-flex">View client record</Link>
+            )}
+            <button onClick={handleResend} disabled={resending}
+              className="btn-secondary inline-flex items-center gap-1.5">
+              {resending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Resend email'}
+            </button>
+          </div>
         </div>
       )}
     </div>
