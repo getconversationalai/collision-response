@@ -349,13 +349,18 @@ export async function approveApplication(
     }
   }
 
-  // 4. Mark the application approved.
-  await admin.from('client_applications').update({
+  // 4. Mark the application approved. The client is already fully provisioned
+  // at this point, so a failure here is not rolled back (that would be worse) —
+  // we log it so an admin can reconcile the stuck-'pending' row if it ever happens.
+  const { error: markErr } = await admin.from('client_applications').update({
     status: 'approved' as ApplicationStatus,
     reviewed_by: adminUserId,
     reviewed_at: new Date().toISOString(),
     created_company_id: company.id,
   }).eq('id', id)
+  if (markErr) {
+    console.error('[applications] provisioned but failed to mark approved:', id, markErr.message)
+  }
 
   // 5. Email the client a set-password link (best-effort).
   let emailSent = false
