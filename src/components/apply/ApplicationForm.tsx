@@ -16,16 +16,26 @@ const STEPS = [
   { label: 'Review', icon: ClipboardCheck },
 ]
 
-export default function ApplicationForm({ municipalities }: { municipalities: Municipality[] }) {
+export default function ApplicationForm({
+  municipalities,
+  initialEmail = '',
+  initialContactName = '',
+  initialCompanyName = '',
+}: {
+  municipalities: Municipality[]
+  initialEmail?: string
+  initialContactName?: string
+  initialCompanyName?: string
+}) {
   const router = useRouter()
   const [step, setStep] = useState(0)
   const [direction, setDirection] = useState<'forward' | 'back'>('forward')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const [companyName, setCompanyName] = useState('')
-  const [contactName, setContactName] = useState('')
-  const [email, setEmail] = useState('')
+  const [companyName, setCompanyName] = useState(initialCompanyName)
+  const [contactName, setContactName] = useState(initialContactName)
+  const [email, setEmail] = useState(initialEmail)
   const [phoneRaw, setPhoneRaw] = useState('')
   const [phoneSecondaryRaw, setPhoneSecondaryRaw] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())

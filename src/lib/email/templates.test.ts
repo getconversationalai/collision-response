@@ -1,5 +1,6 @@
 import { test, expect } from 'vitest'
 import {
+  applicationInviteEmail,
   adminNotificationEmail,
   clientApprovedEmail,
   applicantRejectedEmail,
@@ -56,4 +57,43 @@ test('rejection escapes HTML in the reason (no XSS)', () => {
   const e = applicantRejectedEmail({ companyName: 'ABC', reason: '<script>alert(1)</script>' })
   expect(e.html).not.toContain('<script>')
   expect(e.html).toContain('&lt;script&gt;')
+})
+
+test('invite greets by name, names the company, and links the apply URL', () => {
+  const e = applicationInviteEmail({
+    contactName: 'Jane Doe',
+    companyName: 'ABC Collision',
+    applyUrl: 'https://app.example.com/apply?email=jane%40abc.com&name=Jane+Doe&company=ABC+Collision',
+  })
+  expect(e.subject).toMatch(/invit/i)
+  expect(e.html).toContain('Jane Doe')
+  expect(e.html).toContain('ABC Collision')
+  expect(e.html).toContain('https://app.example.com/apply?email=jane%40abc.com')
+})
+
+test('invite works with no name/company (no undefined, no empty greeting)', () => {
+  const e = applicationInviteEmail({ contactName: null, companyName: null, applyUrl: 'https://app.example.com/apply' })
+  expect(e.html).toContain('https://app.example.com/apply')
+  expect(e.html).not.toContain('undefined')
+  expect(e.html).not.toContain('Hi ,')
+})
+
+test('invite escapes HTML in the contact name (no XSS)', () => {
+  const e = applicationInviteEmail({ contactName: '<b>x</b>', companyName: null, applyUrl: 'https://app.example.com/apply' })
+  expect(e.html).not.toContain('<b>x</b>')
+  expect(e.html).toContain('&lt;b&gt;x&lt;/b&gt;')
+})
+
+test('all signup emails carry the Collision Ping brand', () => {
+  const emails = [
+    applicationInviteEmail({ contactName: null, companyName: null, applyUrl: 'https://x/apply' }),
+    adminNotificationEmail({ companyName: 'C', contactName: 'N', email: 'e@e.com', phoneDisplay: '(1) 2', municipalityNames: [], reviewUrl: 'https://x/r' }),
+    clientApprovedEmail({ companyName: 'C', setupUrl: 'https://x/s', comped: false }),
+    applicantRejectedEmail({ companyName: 'C', reason: null }),
+  ]
+  for (const e of emails) {
+    expect(e.html).toContain('Collision Ping')
+    expect(e.html).toContain('by Automate Anything AI')
+    expect(e.html).not.toContain('Collision Response')
+  }
 })
