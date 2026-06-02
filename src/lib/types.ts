@@ -49,6 +49,7 @@ export type SystemSettings = {
   id: number
   test_mode_until: string | null
   default_monthly_price_cents: number     // global default monthly price
+  notification_emails: string[]           // admin addresses notified on new applications
   updated_at: string
 }
 
@@ -77,6 +78,25 @@ export type Subscription = {
   company_id: string
   municipality_id: string
   is_subscribed: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type ApplicationStatus = 'pending' | 'approved' | 'rejected'
+
+export type ClientApplication = {
+  id: string
+  company_name: string
+  contact_name: string
+  email: string
+  phone: string
+  phone_secondary: string | null
+  requested_municipality_ids: string[]
+  status: ApplicationStatus
+  rejection_reason: string | null
+  reviewed_by: string | null
+  reviewed_at: string | null
+  created_company_id: string | null
   created_at: string
   updated_at: string
 }
@@ -230,6 +250,26 @@ export type Database = {
             referencedColumns: ['id']
           }
         ]
+      }
+      client_applications: {
+        Row: ClientApplication
+        Insert: Omit<
+          ClientApplication,
+          'id' | 'created_at' | 'updated_at' | 'status' | 'rejection_reason'
+          | 'reviewed_by' | 'reviewed_at' | 'created_company_id' | 'phone_secondary'
+          | 'requested_municipality_ids'
+        > & {
+          id?: string
+          status?: ApplicationStatus
+          rejection_reason?: string | null
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+          created_company_id?: string | null
+          phone_secondary?: string | null
+          requested_municipality_ids: string[]   // required: validation always supplies ≥1
+        }
+        Update: Partial<Omit<ClientApplication, 'id'>>
+        Relationships: []
       }
     }
     Views: Record<string, never>
