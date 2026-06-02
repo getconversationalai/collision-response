@@ -24,12 +24,14 @@ export default function ApplicationReview({ detail }: { detail: ApplicationDetai
   const [done, setDone] = useState<'approved' | 'rejected' | null>(null)
   const [resending, setResending] = useState(false)
   const [resent, setResent] = useState(false)
+  const [companyId, setCompanyId] = useState<string | null>(a.created_company_id)
 
   async function handleApprove() {
     setLoading('approve'); setError('')
     try {
       const priceCents = comp ? null : Math.round(parseFloat(priceDollars || '0') * 100)
       const res = await approveApplication(a.id, { priceCents, comp })
+      setCompanyId(res.companyId)
       setDone('approved')
       if (!res.emailSent) setError('Approved, but the welcome email could not be sent. Use "Resend email" below.')
       else router.refresh()
@@ -58,7 +60,7 @@ export default function ApplicationReview({ detail }: { detail: ApplicationDetai
     setResending(true); setError('')
     try {
       const res = done === 'rejected' ? await resendRejectionEmail(a.id) : await resendApprovalEmail(a.id)
-      if (res.ok) setResent(true)
+      if (res.ok) { setResent(true); setError('') }
       else setError('Could not resend the email. Please try again.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not resend the email.')
@@ -199,8 +201,8 @@ export default function ApplicationReview({ detail }: { detail: ApplicationDetai
           </div>
           <p className="text-base font-bold text-navy-800">Approved &amp; provisioned</p>
           <p className="text-sm text-navy-400 mt-1">The client has been emailed a link to set their password and log in.</p>
-          {detail.application.created_company_id && (
-            <Link href={`/admin/clients/${detail.application.created_company_id}`} className="btn-secondary inline-flex mt-4">View client record</Link>
+          {companyId && (
+            <Link href={`/admin/clients/${companyId}`} className="btn-secondary inline-flex mt-4">View client record</Link>
           )}
         </div>
       )}
