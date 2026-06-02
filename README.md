@@ -32,11 +32,11 @@ Deploy to Vercel. Set the environment variables in your Vercel project settings.
 
 ## Client Self-Signup
 
-Prospects can apply at the public `/apply` link (no login required). Approved clients are provisioned automatically and emailed a set-password link.
+Prospects can apply at the public `/signup` link (no login required). Approved clients are provisioned automatically and emailed a set-password link.
 
 **How it works:**
 
-- **Public apply page** — Share `https://collisionping.com/apply` with prospects. They fill out company info and choose coverage areas. Submissions land as `pending` rows in `client_applications`; no auth user or `collision_companies` row is created until an admin approves.
+- **Public apply page** — Share `https://collisionping.com/signup` with prospects. They fill out company info and choose coverage areas. Submissions land as `pending` rows in `client_applications`; no auth user or `collision_companies` row is created until an admin approves.
 - **Admin notifications** — Go to `/admin/settings` to add the email addresses that receive "new application" notifications. The list starts empty; until at least one address is added, the new-application email is skipped and submissions only appear in the in-portal list at `/admin/applications`.
 - **Approval flow** — Open `/admin/applications/<id>` to review a submission. Two paths:
   - **Comp** — Check "Comp this client" at approval. The client account is immediately active (`billing_status='comped'`, `is_active=true`); no card is ever required.

@@ -77,7 +77,7 @@ export default function ApplicationForm({
         municipalityIds: Array.from(selected),
         honeypot,
       })
-      if (res.ok) { router.push('/apply/success'); return }
+      if (res.ok) { router.push('/signup/success'); return }
       if (res.reason === 'validation') setError(res.errors?.[0] ?? 'Please check your entries.')
       else setError(res.message ?? 'Something went wrong. Please try again.')
     } catch {

@@ -487,7 +487,7 @@ export async function updateNotificationEmails(emails: string[]): Promise<{ ok: 
 }
 
 // ---------------------------------------------------------------------------
-// Admin: invite a prospect to apply (emails a pre-filled /apply link)
+// Admin: invite a prospect to apply (emails a pre-filled /signup link)
 // ---------------------------------------------------------------------------
 
 export type SendInviteInput = { email: string; contactName?: string; companyName?: string }
@@ -503,12 +503,12 @@ export async function sendApplicationInvite(input: SendInviteInput): Promise<Sen
   const contactName = input.contactName?.trim() || null
   const companyName = input.companyName?.trim() || null
 
-  // Build a /apply link that pre-fills the form for this prospect.
+  // Build a /signup link that pre-fills the form for this prospect.
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
   const params = new URLSearchParams({ email })
   if (contactName) params.set('name', contactName)
   if (companyName) params.set('company', companyName)
-  const applyUrl = `${appUrl}/apply?${params.toString()}`
+  const applyUrl = `${appUrl}/signup?${params.toString()}`
 
   const { subject, html } = applicationInviteEmail({ contactName, companyName, applyUrl })
   const res = await sendEmail({ to: email, subject, html })

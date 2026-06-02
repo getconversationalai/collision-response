@@ -1,4 +1,4 @@
-import ApplicationSuccess from '@/components/apply/ApplicationSuccess'
+import ApplicationSuccess from '@/components/signup/ApplicationSuccess'
 
 export const metadata = {
   title: 'Application received — Collision Ping',
