@@ -6,6 +6,14 @@ function getAdminIds(): string[] {
   return raw.split(',').map(id => id.trim()).filter(Boolean)
 }
 
+// Public paths reachable without a session. `/auth/confirm` exchanges a
+// one-time token for a session, so it MUST be reachable while logged out.
+const PUBLIC_PREFIXES = ['/login', '/apply', '/auth/confirm']
+
+function isPublicPath(pathname: string): boolean {
+  return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + '/'))
+}
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
 
@@ -37,8 +45,8 @@ export async function updateSession(request: NextRequest) {
   const pathname = request.nextUrl.pathname
   const isAdminRoute = pathname.startsWith('/admin')
 
-  // Unauthenticated users → login (except if already on login)
-  if (!user && !pathname.startsWith('/login')) {
+  // Unauthenticated users → login (except public paths)
+  if (!user && !isPublicPath(pathname)) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
