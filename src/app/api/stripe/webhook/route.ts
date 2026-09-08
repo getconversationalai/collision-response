@@ -217,7 +217,10 @@ async function handleCheckoutCompleted(
         refundDuplicates: true,
       })
       canonicalSubId = result.kept
-      unresolvedDuplicates = result.failedToCancel
+      // A duplicate that couldn't be canceled OR couldn't be refunded is
+      // unresolved — both must drive the retry so no double-charge is left
+      // uncorrected (review NEW finding).
+      unresolvedDuplicates = [...result.failedToCancel, ...result.failedToRefund]
       if (result.hadDuplicates) {
         console.warn(
           `[stripe-webhook] reconciled duplicate subscriptions for customer ${customerId}: ${JSON.stringify(result)}`
@@ -243,7 +246,14 @@ async function handleCheckoutCompleted(
     status: 'succeeded',
     failureReason: null,
   })
-  if (guard === 'duplicate') return
+  if (guard === 'duplicate') {
+    // Activation already happened on the first delivery. The reconcile above
+    // still ran on this redelivery (retrying any stuck cancel/refund), so keep
+    // driving retries from the duplicate path too — otherwise the retry throw
+    // below is unreachable on redelivery (finding MED-2).
+    forceRetryIfUnresolved(event, companyId, unresolvedDuplicates)
+    return
+  }
 
   // Prefer the subscription the reconcile kept over the session's own, so we
   // never persist a subscription we just canceled as a duplicate.
@@ -275,17 +285,44 @@ async function handleCheckoutCompleted(
     .eq('id', companyId)
   if (error) throw new Error(error.message)
 
-  // Activation above is persisted and idempotent. If a duplicate could not be
-  // canceled, fail now so Stripe redelivers and the reconcile retries the
-  // cancel (on redelivery the payment_log guard short-circuits re-activation).
-  // This keeps the once-per-month guarantee without holding a paying client's
-  // activation hostage (finding MED-2). Admin reconcile is the final backstop.
-  if (unresolvedDuplicates.length > 0) {
-    throw new Error(
-      `duplicate subscription(s) still live for customer ${customerId}: ` +
-        `${unresolvedDuplicates.join(', ')} — forcing retry`
+  // Activation above is persisted and idempotent. If a duplicate is still
+  // unresolved, fail now so Stripe redelivers and the reconcile retries — on
+  // redelivery the payment_log guard short-circuits re-activation, so a paying
+  // client is never held hostage (finding MED-2).
+  forceRetryIfUnresolved(event, companyId, unresolvedDuplicates)
+}
+
+// How long to keep forcing Stripe redeliveries for an unresolved duplicate
+// before giving up and leaving it to the admin reconcile backstop. Bounds the
+// 500-retry loop so a permanently-stuck event can't fail forever (which risks
+// Stripe disabling the endpoint).
+const DUPLICATE_RETRY_WINDOW_MS = 2 * 60 * 60 * 1000 // 2 hours
+
+/**
+ * Throw (→ 500 → Stripe redelivery) while a duplicate subscription remains
+ * uncanceled/unrefunded, but only within a bounded window from the event's
+ * creation. Past the window, log a loud alert and let the request succeed so
+ * the endpoint stays healthy; the admin reconcile is the final backstop.
+ */
+function forceRetryIfUnresolved(
+  event: Stripe.Event,
+  companyId: string,
+  unresolved: string[]
+): void {
+  if (unresolved.length === 0) return
+  const ageMs = Date.now() - event.created * 1000
+  if (ageMs > DUPLICATE_RETRY_WINDOW_MS) {
+    console.error(
+      `[stripe-webhook] ALERT: giving up retrying unresolved duplicate ` +
+        `subscription(s) for company ${companyId} after ${Math.round(ageMs / 60000)}m: ` +
+        `${unresolved.join(', ')} — needs admin reconcile`
     )
+    return
   }
+  throw new Error(
+    `unresolved duplicate subscription(s) for company ${companyId}: ` +
+      `${unresolved.join(', ')} — forcing retry`
+  )
 }
 
 /**

@@ -107,6 +107,7 @@ export interface ReconcileResult {
   kept: string | null
   canceled: string[] // confirmed canceled
   failedToCancel: string[] // still live — caller must surface / retry
+  failedToRefund: string[] // canceled but its charge could not be refunded
   refunds: Array<{ subscriptionId: string } & RefundResult>
   hadDuplicates: boolean
 }
@@ -136,6 +137,7 @@ export async function reconcileDuplicatesForCustomer(
 
   const canceled: string[] = []
   const failedToCancel: string[] = []
+  const failedToRefund: string[] = []
   const refunds: ReconcileResult['refunds'] = []
 
   for (const id of cancel) {
@@ -166,6 +168,7 @@ export async function reconcileDuplicatesForCustomer(
       const r = await refundSubscriptionLatestPaid(stripe, id)
       refunds.push({ subscriptionId: id, ...r })
     } catch (err) {
+      failedToRefund.push(id)
       console.error(
         `[reconcile] refund failed for duplicate subscription ${id} (customer ${customerId}):`,
         err
@@ -178,6 +181,7 @@ export async function reconcileDuplicatesForCustomer(
     kept: keep,
     canceled,
     failedToCancel,
+    failedToRefund,
     refunds,
     hadDuplicates: cancel.length > 0,
   }
