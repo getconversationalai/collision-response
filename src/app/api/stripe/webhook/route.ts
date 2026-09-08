@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server'
 import type Stripe from 'stripe'
 import { getStripe, getStripeCryptoProvider } from '@/lib/stripe'
 import { getAdminClient } from '@/lib/supabase/admin'
+import { reconcileDuplicatesForCustomer } from '@/lib/billing/stripe-ops'
 import type { BillingStatus, PaymentStatus } from '@/lib/types'
 
 // Webhooks are always dynamic — never cache or pre-render this route.
@@ -144,11 +145,14 @@ async function findCompanyByCustomer(
   admin: Admin,
   customerId: string
 ): Promise<CompanyBillingRow | null> {
-  const { data } = await admin
+  const { data, error } = await admin
     .from('collision_companies')
     .select(COMPANY_BILLING_COLUMNS)
     .eq('stripe_customer_id', customerId)
     .maybeSingle()
+  // Surface a transient DB error (→ 500 → Stripe retry) instead of mistaking it
+  // for "no such company" and silently dropping the event (finding MED-1).
+  if (error) throw new Error(`company lookup by customer failed: ${error.message}`)
   return (data as CompanyBillingRow | null) ?? null
 }
 
@@ -156,11 +160,14 @@ async function findCompanyBySubscription(
   admin: Admin,
   subscriptionId: string
 ): Promise<CompanyBillingRow | null> {
-  const { data } = await admin
+  const { data, error } = await admin
     .from('collision_companies')
     .select(COMPANY_BILLING_COLUMNS)
     .eq('stripe_subscription_id', subscriptionId)
     .maybeSingle()
+  if (error) {
+    throw new Error(`company lookup by subscription failed: ${error.message}`)
+  }
   return (data as CompanyBillingRow | null) ?? null
 }
 
@@ -190,7 +197,44 @@ async function handleCheckoutCompleted(
     return
   }
 
-  // Idempotency guard FIRST, before any state mutation.
+  const customerId =
+    typeof session.customer === 'string'
+      ? session.customer
+      : session.customer?.id ?? null
+
+  // Self-heal duplicate subscriptions BEFORE the idempotency guard's early
+  // return, so a Stripe event redelivery still reconciles (finding C2). This is
+  // idempotent (a customer with a single subscription cancels nothing) and
+  // best-effort (never fails the webhook). It keeps the canonical subscription
+  // and cancels + refunds any duplicate the single-flight checkout didn't stop
+  // (finding H2). This — not the checkout guard alone — is what makes
+  // "at most one charge per month" hold.
+  let canonicalSubId: string | null = null
+  let unresolvedDuplicates: string[] = []
+  if (customerId) {
+    try {
+      const result = await reconcileDuplicatesForCustomer(stripe, customerId, {
+        refundDuplicates: true,
+      })
+      canonicalSubId = result.kept
+      // A duplicate that couldn't be canceled OR couldn't be refunded is
+      // unresolved — both must drive the retry so no double-charge is left
+      // uncorrected (review NEW finding).
+      unresolvedDuplicates = [...result.failedToCancel, ...result.failedToRefund]
+      if (result.hadDuplicates) {
+        console.warn(
+          `[stripe-webhook] reconciled duplicate subscriptions for customer ${customerId}: ${JSON.stringify(result)}`
+        )
+      }
+    } catch (err) {
+      console.error(
+        `[stripe-webhook] duplicate reconcile failed (non-fatal) for customer ${customerId}:`,
+        err
+      )
+    }
+  }
+
+  // Idempotency guard for the payment record + state mutation.
   const guard = await recordPaymentEvent(admin, {
     companyId,
     eventId: event.id,
@@ -202,12 +246,22 @@ async function handleCheckoutCompleted(
     status: 'succeeded',
     failureReason: null,
   })
-  if (guard === 'duplicate') return
+  if (guard === 'duplicate') {
+    // Activation already happened on the first delivery. The reconcile above
+    // still ran on this redelivery (retrying any stuck cancel/refund), so keep
+    // driving retries from the duplicate path too — otherwise the retry throw
+    // below is unreachable on redelivery (finding MED-2).
+    forceRetryIfUnresolved(event, companyId, unresolvedDuplicates)
+    return
+  }
 
-  const subscriptionId =
+  // Prefer the subscription the reconcile kept over the session's own, so we
+  // never persist a subscription we just canceled as a duplicate.
+  const sessionSubId =
     typeof session.subscription === 'string'
       ? session.subscription
       : session.subscription?.id ?? null
+  const subscriptionId = canonicalSubId ?? sessionSubId
 
   // The session itself has no period end — retrieve the subscription for it.
   let currentPeriodEnd: string | null = null
@@ -224,9 +278,51 @@ async function handleCheckoutCompleted(
       stripe_subscription_id: subscriptionId,
       current_period_end: currentPeriodEnd,
       last_payment_failed_at: null,
+      // Clear the single-flight hold now that checkout has completed.
+      pending_checkout_session_id: null,
+      pending_checkout_expires_at: null,
     })
     .eq('id', companyId)
   if (error) throw new Error(error.message)
+
+  // Activation above is persisted and idempotent. If a duplicate is still
+  // unresolved, fail now so Stripe redelivers and the reconcile retries — on
+  // redelivery the payment_log guard short-circuits re-activation, so a paying
+  // client is never held hostage (finding MED-2).
+  forceRetryIfUnresolved(event, companyId, unresolvedDuplicates)
+}
+
+// How long to keep forcing Stripe redeliveries for an unresolved duplicate
+// before giving up and leaving it to the admin reconcile backstop. Bounds the
+// 500-retry loop so a permanently-stuck event can't fail forever (which risks
+// Stripe disabling the endpoint).
+const DUPLICATE_RETRY_WINDOW_MS = 2 * 60 * 60 * 1000 // 2 hours
+
+/**
+ * Throw (→ 500 → Stripe redelivery) while a duplicate subscription remains
+ * uncanceled/unrefunded, but only within a bounded window from the event's
+ * creation. Past the window, log a loud alert and let the request succeed so
+ * the endpoint stays healthy; the admin reconcile is the final backstop.
+ */
+function forceRetryIfUnresolved(
+  event: Stripe.Event,
+  companyId: string,
+  unresolved: string[]
+): void {
+  if (unresolved.length === 0) return
+  const ageMs = Date.now() - event.created * 1000
+  if (ageMs > DUPLICATE_RETRY_WINDOW_MS) {
+    console.error(
+      `[stripe-webhook] ALERT: giving up retrying unresolved duplicate ` +
+        `subscription(s) for company ${companyId} after ${Math.round(ageMs / 60000)}m: ` +
+        `${unresolved.join(', ')} — needs admin reconcile`
+    )
+    return
+  }
+  throw new Error(
+    `unresolved duplicate subscription(s) for company ${companyId}: ` +
+      `${unresolved.join(', ')} — forcing retry`
+  )
 }
 
 /**
