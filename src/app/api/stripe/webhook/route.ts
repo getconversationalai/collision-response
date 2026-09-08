@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server'
 import type Stripe from 'stripe'
 import { getStripe, getStripeCryptoProvider } from '@/lib/stripe'
 import { getAdminClient } from '@/lib/supabase/admin'
+import { reconcileDuplicatesForCustomer } from '@/lib/billing/stripe-ops'
 import type { BillingStatus, PaymentStatus } from '@/lib/types'
 
 // Webhooks are always dynamic — never cache or pre-render this route.
@@ -190,7 +191,39 @@ async function handleCheckoutCompleted(
     return
   }
 
-  // Idempotency guard FIRST, before any state mutation.
+  const customerId =
+    typeof session.customer === 'string'
+      ? session.customer
+      : session.customer?.id ?? null
+
+  // Self-heal duplicate subscriptions BEFORE the idempotency guard's early
+  // return, so a Stripe event redelivery still reconciles (finding C2). This is
+  // idempotent (a customer with a single subscription cancels nothing) and
+  // best-effort (never fails the webhook). It keeps the canonical subscription
+  // and cancels + refunds any duplicate the single-flight checkout didn't stop
+  // (finding H2). This — not the checkout guard alone — is what makes
+  // "at most one charge per month" hold.
+  let canonicalSubId: string | null = null
+  if (customerId) {
+    try {
+      const result = await reconcileDuplicatesForCustomer(stripe, customerId, {
+        refundDuplicates: true,
+      })
+      canonicalSubId = result.kept
+      if (result.hadDuplicates) {
+        console.warn(
+          `[stripe-webhook] reconciled duplicate subscriptions for customer ${customerId}: ${JSON.stringify(result)}`
+        )
+      }
+    } catch (err) {
+      console.error(
+        `[stripe-webhook] duplicate reconcile failed (non-fatal) for customer ${customerId}:`,
+        err
+      )
+    }
+  }
+
+  // Idempotency guard for the payment record + state mutation.
   const guard = await recordPaymentEvent(admin, {
     companyId,
     eventId: event.id,
@@ -204,10 +237,13 @@ async function handleCheckoutCompleted(
   })
   if (guard === 'duplicate') return
 
-  const subscriptionId =
+  // Prefer the subscription the reconcile kept over the session's own, so we
+  // never persist a subscription we just canceled as a duplicate.
+  const sessionSubId =
     typeof session.subscription === 'string'
       ? session.subscription
       : session.subscription?.id ?? null
+  const subscriptionId = canonicalSubId ?? sessionSubId
 
   // The session itself has no period end — retrieve the subscription for it.
   let currentPeriodEnd: string | null = null
@@ -224,6 +260,9 @@ async function handleCheckoutCompleted(
       stripe_subscription_id: subscriptionId,
       current_period_end: currentPeriodEnd,
       last_payment_failed_at: null,
+      // Clear the single-flight hold now that checkout has completed.
+      pending_checkout_session_id: null,
+      pending_checkout_expires_at: null,
     })
     .eq('id', companyId)
   if (error) throw new Error(error.message)

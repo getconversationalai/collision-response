@@ -7,6 +7,20 @@ import { verifyAdmin } from '@/lib/actions/admin-actions'
 import { getStripe } from '@/lib/stripe'
 import type Stripe from 'stripe'
 import type { BillingStatus, CollisionCompany, PaymentLog } from '@/lib/types'
+import {
+  listSubSummaries,
+  cancelSubscriptionSafe,
+  refundSubscriptionLatestPaid,
+} from '@/lib/billing/stripe-ops'
+import {
+  isLiveSubscriptionStatus,
+  selectCanonicalSubscription,
+} from '@/lib/billing/reconcile'
+
+// How long a reused pending Checkout Session is considered valid before we
+// mint a fresh one. Stripe Checkout Sessions expire after ~24h; we reuse for a
+// shorter window so a stale link is never handed back.
+const CHECKOUT_HOLD_MS = 30 * 60 * 1000
 
 // ---------------------------------------------------------------------------
 // Auth helpers — mirrors src/lib/actions/admin-actions.ts intentionally.
@@ -224,6 +238,44 @@ export async function createCheckoutSession(): Promise<{ url: string }> {
 
   const stripe = getStripe()
   const customerId = await ensureStripeCustomer(company)
+  const admin = getAdminClient()
+
+  // Guard against a stale-DB race: the DB flips to `active` only via the async
+  // webhook, so `billing_status` above can lag. Check Stripe's own truth — if a
+  // collectible subscription already exists, never start a second checkout.
+  // (An `incomplete`/expired-only state is left retryable — the session reuse
+  // below returns the SAME session rather than a new subscription.)
+  const existingSubs = await listSubSummaries(stripe, customerId)
+  const hasCollectibleSub = existingSubs.some(
+    (s) => isLiveSubscriptionStatus(s.status) && s.status !== 'incomplete'
+  )
+  if (hasCollectibleSub) {
+    throw new Error(
+      'Billing is already set up for your account. Use "Manage billing" to update your card.'
+    )
+  }
+
+  // Single-flight: reuse the one in-flight Checkout Session across retries so a
+  // double-click / back-button / second tab can't create a second subscription
+  // (a Checkout Session can be completed at most once).
+  const now = Date.now()
+  if (
+    company.pending_checkout_session_id &&
+    company.pending_checkout_expires_at &&
+    Date.parse(company.pending_checkout_expires_at) > now
+  ) {
+    try {
+      const existing = await stripe.checkout.sessions.retrieve(
+        company.pending_checkout_session_id
+      )
+      if (existing.status === 'open' && existing.url) {
+        return { url: existing.url }
+      }
+    } catch {
+      // Fall through and create a fresh session.
+    }
+  }
+
   const priceId = await createMonthlyPrice(priceCents, company.id)
   const appUrl = getAppUrl()
 
@@ -238,6 +290,17 @@ export async function createCheckoutSession(): Promise<{ url: string }> {
   })
 
   if (!session.url) throw new Error('Stripe did not return a Checkout URL')
+
+  // Persist the hold so subsequent submits reuse this exact session.
+  const { error: holdError } = await admin
+    .from('collision_companies')
+    .update({
+      pending_checkout_session_id: session.id,
+      pending_checkout_expires_at: new Date(now + CHECKOUT_HOLD_MS).toISOString(),
+    })
+    .eq('id', company.id)
+  if (holdError) throw new Error(holdError.message)
+
   return { url: session.url }
 }
 
@@ -663,4 +726,96 @@ export async function getAdminBillingOverview(): Promise<AdminBillingOverview> {
   }))
 
   return { defaultPriceCents, mrrCents, statusCounts, recentFailedPayments }
+}
+
+// ---------------------------------------------------------------------------
+// Duplicate-subscription reconciliation (cleans up pre-existing duplicates)
+// ---------------------------------------------------------------------------
+
+export type DuplicateReconcileEntry = {
+  companyId: string
+  companyName: string
+  stripeCustomerId: string
+  keptSubscriptionId: string | null
+  canceledSubscriptionIds: string[]
+}
+
+export type DuplicateReconcileReport = {
+  dryRun: boolean
+  scanned: number
+  entries: DuplicateReconcileEntry[] // only companies that had duplicates
+}
+
+/**
+ * Admin: find customers carrying more than one live Stripe subscription and
+ * (unless dryRun) cancel the extras, keeping the canonical one. Does NOT
+ * auto-refund — the historical duplicate charges are refunded explicitly via
+ * `adminRefundDuplicateCharge` so money-out stays under human control.
+ *
+ * Processes a capped batch per call (Workers subrequest limit); re-run until
+ * `scanned < limit` or no entries remain.
+ */
+export async function adminReconcileDuplicateSubscriptions(
+  opts: { dryRun?: boolean; limit?: number } = {}
+): Promise<DuplicateReconcileReport> {
+  await requireAdmin()
+  const dryRun = opts.dryRun ?? true
+  const limit = Math.min(Math.max(opts.limit ?? 100, 1), 200)
+
+  const admin = getAdminClient()
+  const { data, error } = await admin
+    .from('collision_companies')
+    .select('id, company_name, stripe_customer_id')
+    .not('stripe_customer_id', 'is', null)
+    .limit(limit)
+  if (error) throw new Error(error.message)
+
+  const stripe = getStripe()
+  const companies = (data ?? []) as unknown as Array<{
+    id: string
+    company_name: string
+    stripe_customer_id: string
+  }>
+
+  const entries: DuplicateReconcileEntry[] = []
+  for (const c of companies) {
+    const subs = await listSubSummaries(stripe, c.stripe_customer_id)
+    const { keep, cancel } = selectCanonicalSubscription(subs)
+    if (cancel.length === 0) continue // one (or zero) live subscription — fine
+
+    if (!dryRun) {
+      for (const id of cancel) await cancelSubscriptionSafe(stripe, id)
+      // Keep our DB pointer aligned with the surviving subscription.
+      if (keep) {
+        const { error: upErr } = await admin
+          .from('collision_companies')
+          .update({ stripe_subscription_id: keep })
+          .eq('id', c.id)
+        if (upErr) throw new Error(upErr.message)
+      }
+    }
+
+    entries.push({
+      companyId: c.id,
+      companyName: c.company_name,
+      stripeCustomerId: c.stripe_customer_id,
+      keptSubscriptionId: keep,
+      canceledSubscriptionIds: cancel,
+    })
+  }
+
+  return { dryRun, scanned: companies.length, entries }
+}
+
+/**
+ * Admin: refund the most recent paid invoice for a subscription (e.g. a
+ * duplicate charge already collected). Explicit, one subscription at a time.
+ */
+export async function adminRefundDuplicateCharge(
+  subscriptionId: string
+): Promise<{ success: true; refunded: boolean; amountCents?: number }> {
+  await requireAdmin()
+  const stripe = getStripe()
+  const r = await refundSubscriptionLatestPaid(stripe, subscriptionId)
+  return { success: true, refunded: r.refunded, amountCents: r.amountCents }
 }

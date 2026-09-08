@@ -41,6 +41,10 @@ export type CollisionCompany = {
   billing_status: BillingStatus
   current_period_end: string | null
   last_payment_failed_at: string | null
+  // Single-flight checkout (migration 006): the one in-flight Checkout Session
+  // reused across retries so a double-submit can't create a second subscription.
+  pending_checkout_session_id: string | null
+  pending_checkout_expires_at: string | null
   created_at: string
   updated_at: string
 }
@@ -155,6 +159,8 @@ export type Database = {
           | 'billing_status'
           | 'current_period_end'
           | 'last_payment_failed_at'
+          | 'pending_checkout_session_id'
+          | 'pending_checkout_expires_at'
         > & {
           id?: string
           is_admin?: boolean
@@ -165,6 +171,8 @@ export type Database = {
           billing_status?: BillingStatus
           current_period_end?: string | null
           last_payment_failed_at?: string | null
+          pending_checkout_session_id?: string | null
+          pending_checkout_expires_at?: string | null
         }
         Update: Partial<Omit<CollisionCompany, 'id' | 'auth_user_id'>>
         Relationships: []
