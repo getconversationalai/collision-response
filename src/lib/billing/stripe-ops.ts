@@ -5,9 +5,15 @@
 import type Stripe from 'stripe'
 import {
   selectCanonicalSubscription,
+  isSameBurstDuplicate,
   type SubSummary,
   type StripeSubStatus,
 } from './reconcile'
+
+// A duplicate created within this window of the kept subscription is treated as
+// a same-signup-burst double-submit and auto-refunded; anything older is left
+// for an admin (finding MED-3).
+const SAME_BURST_WINDOW_SEC = 60 * 60
 
 /** Fetch a customer's subscriptions as the pure SubSummary shape. */
 export async function listSubSummaries(
@@ -38,10 +44,23 @@ export async function cancelSubscriptionSafe(
 ): Promise<void> {
   try {
     await stripe.subscriptions.cancel(id)
+    return
   } catch (err) {
-    // Already canceled or missing → idempotent success. Anything else re-throws.
-    const existing = await stripe.subscriptions.retrieve(id).catch(() => null)
-    if (existing && existing.status !== 'canceled') throw err
+    // Swallow ONLY when we can POSITIVELY confirm the subscription is already
+    // canceled / gone (finding HIGH-1). If we can't confirm (e.g. the retrieve
+    // also fails on a transient error), re-throw so the caller never treats an
+    // un-canceled duplicate as handled.
+    let confirmedGone = false
+    try {
+      const existing = await stripe.subscriptions.retrieve(id)
+      confirmedGone = existing.status === 'canceled'
+    } catch (retrieveErr) {
+      // A missing subscription means it's already gone → success.
+      if ((retrieveErr as { code?: string })?.code === 'resource_missing') {
+        confirmedGone = true
+      }
+    }
+    if (!confirmedGone) throw err
   }
 }
 
@@ -74,14 +93,20 @@ export async function refundSubscriptionLatestPaid(
       : invoice.payment_intent?.id ?? null
   if (!paymentIntent) return { refunded: false }
 
-  const refund = await stripe.refunds.create({ payment_intent: paymentIntent })
+  // Idempotency key keyed on the payment_intent so a concurrent webhook
+  // redelivery can't issue a second refund for the same charge (finding HIGH-2).
+  const refund = await stripe.refunds.create(
+    { payment_intent: paymentIntent },
+    { idempotencyKey: `refund-${paymentIntent}` }
+  )
   return { refunded: true, refundId: refund.id, amountCents: refund.amount }
 }
 
 export interface ReconcileResult {
   customerId: string
   kept: string | null
-  canceled: string[]
+  canceled: string[] // confirmed canceled
+  failedToCancel: string[] // still live — caller must surface / retry
   refunds: Array<{ subscriptionId: string } & RefundResult>
   hadDuplicates: boolean
 }
@@ -89,8 +114,15 @@ export interface ReconcileResult {
 /**
  * Ensure a customer has at most ONE subscription: keep the canonical one
  * (paid states beat incomplete — finding C3), cancel the rest, and optionally
- * refund each canceled duplicate's most recent paid invoice. Idempotent: on a
- * customer that already has a single subscription it cancels nothing.
+ * refund each SAME-BURST canceled duplicate's most recent paid invoice.
+ * Idempotent: on a customer that already has a single subscription it cancels
+ * nothing.
+ *
+ * Robust to partial failure (finding HIGH-2): `kept` is decided up front and
+ * always returned, and each duplicate's cancel/refund is isolated — a refund
+ * error can never null out the canonical id or abort the remaining work. A
+ * duplicate that could not be confirmed canceled is reported in
+ * `failedToCancel` (never silently dropped).
  */
 export async function reconcileDuplicatesForCustomer(
   stripe: Stripe,
@@ -99,20 +131,53 @@ export async function reconcileDuplicatesForCustomer(
 ): Promise<ReconcileResult> {
   const subs = await listSubSummaries(stripe, customerId)
   const { keep, cancel } = selectCanonicalSubscription(subs)
+  const byId = new Map(subs.map((s) => [s.id, s]))
+  const keptSub = keep ? byId.get(keep) ?? null : null
 
+  const canceled: string[] = []
+  const failedToCancel: string[] = []
   const refunds: ReconcileResult['refunds'] = []
+
   for (const id of cancel) {
-    await cancelSubscriptionSafe(stripe, id)
-    if (opts.refundDuplicates) {
+    try {
+      await cancelSubscriptionSafe(stripe, id)
+      canceled.push(id)
+    } catch (err) {
+      failedToCancel.push(id)
+      console.error(
+        `[reconcile] could not cancel duplicate subscription ${id} for customer ${customerId}:`,
+        err
+      )
+      continue // never refund a subscription we couldn't confirm canceled
+    }
+
+    if (!opts.refundDuplicates) continue
+
+    // Only auto-refund a same-signup-burst duplicate; older subscriptions are
+    // left for an admin to refund deliberately (finding MED-3).
+    const dup = byId.get(id)
+    const sameBurst =
+      keptSub && dup
+        ? isSameBurstDuplicate(keptSub.created, dup.created, SAME_BURST_WINDOW_SEC)
+        : false
+    if (!sameBurst) continue
+
+    try {
       const r = await refundSubscriptionLatestPaid(stripe, id)
       refunds.push({ subscriptionId: id, ...r })
+    } catch (err) {
+      console.error(
+        `[reconcile] refund failed for duplicate subscription ${id} (customer ${customerId}):`,
+        err
+      )
     }
   }
 
   return {
     customerId,
     kept: keep,
-    canceled: cancel,
+    canceled,
+    failedToCancel,
     refunds,
     hadDuplicates: cancel.length > 0,
   }

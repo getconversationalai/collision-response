@@ -2,6 +2,7 @@ import { test, expect } from 'vitest'
 import {
   isLiveSubscriptionStatus,
   isPaidAndCurrent,
+  isSameBurstDuplicate,
   selectCanonicalSubscription,
   shouldDisableForLapse,
   type SubSummary,
@@ -144,4 +145,16 @@ test('DOES disable when the subscription is gone from Stripe but DB still active
   expect(
     shouldDisableForLapse(lapse({ stripeStatus: 'not_found', stripeCurrentPeriodEndMs: null }))
   ).toBe(true)
+})
+
+// ---------------------------------------------------------------------------
+// isSameBurstDuplicate — auto-refund only same-signup-burst duplicates (MED-3)
+// ---------------------------------------------------------------------------
+test('same-burst duplicate (created seconds apart) is auto-refundable', () => {
+  expect(isSameBurstDuplicate(1000, 1005, 3600)).toBe(true)
+})
+
+test('a genuinely older subscription is NOT auto-refunded', () => {
+  const twoDays = 2 * 24 * 60 * 60
+  expect(isSameBurstDuplicate(1000, 1000 + twoDays, 3600)).toBe(false)
 })

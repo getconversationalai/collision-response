@@ -149,3 +149,18 @@ export function shouldDisableForLapse(i: LapseInput): boolean {
   // Not paid-and-current AND the period has genuinely lapsed → disable.
   return true
 }
+
+/**
+ * Whether a canceled duplicate's charge should be AUTO-refunded. Only true when
+ * the duplicate was created in the same burst as the kept subscription (a
+ * genuine double-submit) — a genuinely older/separately-created subscription is
+ * left for an admin to refund deliberately (adversarial finding MED-3). Times
+ * are Stripe `created` in unix seconds.
+ */
+export function isSameBurstDuplicate(
+  keptCreatedSec: number,
+  dupCreatedSec: number,
+  windowSec: number
+): boolean {
+  return Math.abs(dupCreatedSec - keptCreatedSec) <= windowSec
+}

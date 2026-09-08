@@ -145,11 +145,14 @@ async function findCompanyByCustomer(
   admin: Admin,
   customerId: string
 ): Promise<CompanyBillingRow | null> {
-  const { data } = await admin
+  const { data, error } = await admin
     .from('collision_companies')
     .select(COMPANY_BILLING_COLUMNS)
     .eq('stripe_customer_id', customerId)
     .maybeSingle()
+  // Surface a transient DB error (→ 500 → Stripe retry) instead of mistaking it
+  // for "no such company" and silently dropping the event (finding MED-1).
+  if (error) throw new Error(`company lookup by customer failed: ${error.message}`)
   return (data as CompanyBillingRow | null) ?? null
 }
 
@@ -157,11 +160,14 @@ async function findCompanyBySubscription(
   admin: Admin,
   subscriptionId: string
 ): Promise<CompanyBillingRow | null> {
-  const { data } = await admin
+  const { data, error } = await admin
     .from('collision_companies')
     .select(COMPANY_BILLING_COLUMNS)
     .eq('stripe_subscription_id', subscriptionId)
     .maybeSingle()
+  if (error) {
+    throw new Error(`company lookup by subscription failed: ${error.message}`)
+  }
   return (data as CompanyBillingRow | null) ?? null
 }
 
@@ -204,12 +210,14 @@ async function handleCheckoutCompleted(
   // (finding H2). This — not the checkout guard alone — is what makes
   // "at most one charge per month" hold.
   let canonicalSubId: string | null = null
+  let unresolvedDuplicates: string[] = []
   if (customerId) {
     try {
       const result = await reconcileDuplicatesForCustomer(stripe, customerId, {
         refundDuplicates: true,
       })
       canonicalSubId = result.kept
+      unresolvedDuplicates = result.failedToCancel
       if (result.hadDuplicates) {
         console.warn(
           `[stripe-webhook] reconciled duplicate subscriptions for customer ${customerId}: ${JSON.stringify(result)}`
@@ -266,6 +274,18 @@ async function handleCheckoutCompleted(
     })
     .eq('id', companyId)
   if (error) throw new Error(error.message)
+
+  // Activation above is persisted and idempotent. If a duplicate could not be
+  // canceled, fail now so Stripe redelivers and the reconcile retries the
+  // cancel (on redelivery the payment_log guard short-circuits re-activation).
+  // This keeps the once-per-month guarantee without holding a paying client's
+  // activation hostage (finding MED-2). Admin reconcile is the final backstop.
+  if (unresolvedDuplicates.length > 0) {
+    throw new Error(
+      `duplicate subscription(s) still live for customer ${customerId}: ` +
+        `${unresolvedDuplicates.join(', ')} — forcing retry`
+    )
+  }
 }
 
 /**
