@@ -9,11 +9,14 @@ import {
   ExternalLink,
   Gift,
   X,
+  Link2,
+  Copy,
 } from 'lucide-react'
 import {
   adminGetClientBilling,
   adminSetClientPrice,
   adminCompClient,
+  adminCreateCheckoutLink,
   type AdminClientBilling,
 } from '@/lib/actions/billing-actions'
 import type { BillingStatus } from '@/lib/types'
@@ -62,6 +65,10 @@ export default function ClientBillingSection({
   const [showPriceConfirm, setShowPriceConfirm] = useState(false)
 
   const [savingComp, setSavingComp] = useState(false)
+
+  const [generatingLink, setGeneratingLink] = useState(false)
+  const [checkoutLink, setCheckoutLink] = useState('')
+  const [linkCopied, setLinkCopied] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -143,6 +150,30 @@ export default function ClientBillingSection({
       setError(e instanceof Error ? e.message : 'Failed to update comp status')
     } finally {
       setSavingComp(false)
+    }
+  }
+
+  async function handleGenerateLink() {
+    setError('')
+    setLinkCopied(false)
+    setGeneratingLink(true)
+    try {
+      const { url } = await adminCreateCheckoutLink(companyId)
+      setCheckoutLink(url)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to generate a card-entry link')
+    } finally {
+      setGeneratingLink(false)
+    }
+  }
+
+  async function handleCopyLink() {
+    try {
+      await navigator.clipboard.writeText(checkoutLink)
+      setLinkCopied(true)
+      setTimeout(() => setLinkCopied(false), 2000)
+    } catch {
+      setError('Could not copy — select the link and copy it manually.')
     }
   }
 
@@ -289,6 +320,83 @@ export default function ClientBillingSection({
           card.
         </p>
       </div>
+
+      {/* Card-entry link — operator keys in a client-provided card (MOTO) */}
+      {!billing.isComped &&
+        (billing.billingStatus === 'pending' ||
+          billing.billingStatus === 'canceled') && (
+          <div className="rounded-xl border border-navy-200/40 bg-white/40 p-4 mb-4">
+            <div className="flex items-center gap-2">
+              <Link2 className="w-3.5 h-3.5 text-brand-500" />
+              <span className="text-sm font-semibold text-navy-700">
+                Card-entry link
+              </span>
+            </div>
+            <p className="text-[11px] text-navy-400 mt-1 mb-3">
+              Generates a secure Stripe page to key in a card the client
+              provided (or send them the link). Completing it starts their{' '}
+              {formatCents(billing.effectivePriceCents)}/mo subscription and
+              turns SMS on automatically — and can never create a duplicate.
+            </p>
+
+            {!checkoutLink ? (
+              <button
+                onClick={handleGenerateLink}
+                disabled={generatingLink}
+                className="btn-secondary flex items-center gap-2"
+              >
+                {generatingLink ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Link2 className="w-4 h-4" />
+                )}
+                {generatingLink ? 'Generating…' : 'Generate card-entry link'}
+              </button>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <input
+                    readOnly
+                    value={checkoutLink}
+                    onFocus={(e) => e.currentTarget.select()}
+                    className="input-field flex-1 text-xs"
+                  />
+                  <button
+                    onClick={handleCopyLink}
+                    className="btn-secondary flex items-center gap-1.5 shrink-0"
+                  >
+                    {linkCopied ? (
+                      <Check className="w-4 h-4" />
+                    ) : (
+                      <Copy className="w-4 h-4" />
+                    )}
+                    {linkCopied ? 'Copied' : 'Copy'}
+                  </button>
+                  <a
+                    href={checkoutLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-primary flex items-center gap-1.5 shrink-0"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    Open
+                  </a>
+                </div>
+                <p className="text-[11px] text-navy-400">
+                  Type the card only on the Stripe page this opens — never store
+                  it here. If the link is old or stops working, regenerate it.
+                </p>
+                <button
+                  onClick={handleGenerateLink}
+                  disabled={generatingLink}
+                  className="text-[11px] font-semibold text-brand-600 hover:text-brand-700 disabled:opacity-50"
+                >
+                  Regenerate link
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
       {/* Stripe link */}
       {billing.stripeCustomerId && (

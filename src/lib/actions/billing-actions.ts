@@ -212,19 +212,26 @@ async function getCardForCustomer(
 // ---------------------------------------------------------------------------
 
 /**
- * Creates a Stripe Checkout session for initial card capture + first charge.
- * The DB is NOT updated here — the `checkout.session.completed` webhook is the
- * source of truth (spec §4). Returns the hosted Checkout URL to redirect to.
+ * Shared checkout core used by BOTH the client-facing `createCheckoutSession`
+ * and the admin `adminCreateCheckoutLink`. Creates (or reuses) the single
+ * in-flight Stripe Checkout Session for a company's first card capture + first
+ * charge. The DB is NOT activated here — the `checkout.session.completed`
+ * webhook is the source of truth and keys off the `company_id` metadata set
+ * below, so whoever completes the hosted page activates the right company.
+ *
+ * `redirects` lets the admin flow land back on the admin client page instead of
+ * the client-facing /billing page.
  */
-export async function createCheckoutSession(): Promise<{ url: string }> {
-  const company = await getCurrentCompany()
-
+async function startCheckoutForCompany(
+  company: CollisionCompany,
+  redirects?: { successUrl?: string; cancelUrl?: string }
+): Promise<{ url: string }> {
   if (company.is_comped || company.billing_status === 'comped') {
-    throw new Error('Your account is comped — no card is required.')
+    throw new Error('This account is comped — no card is required.')
   }
   if (company.billing_status === 'active') {
     throw new Error(
-      'Billing is already active. Use "Update card" to change your payment method.'
+      'Billing is already active. Use the Stripe customer portal to change the payment method.'
     )
   }
 
@@ -232,7 +239,7 @@ export async function createCheckoutSession(): Promise<{ url: string }> {
   const priceCents = effectivePriceCents(company, systemDefault)
   if (priceCents <= 0) {
     throw new Error(
-      'No payment is required for your account. Contact your administrator if SMS is not active.'
+      'No payment is required for this account (price is $0). Comp the client instead if SMS should be free.'
     )
   }
 
@@ -251,13 +258,13 @@ export async function createCheckoutSession(): Promise<{ url: string }> {
   )
   if (hasCollectibleSub) {
     throw new Error(
-      'Billing is already set up for your account. Use "Manage billing" to update your card.'
+      'Billing is already set up for this account — a subscription already exists in Stripe.'
     )
   }
 
   // Single-flight: reuse the one in-flight Checkout Session across retries so a
-  // double-click / back-button / second tab can't create a second subscription
-  // (a Checkout Session can be completed at most once).
+  // double-click / back-button / second tab (or an admin link opened twice)
+  // can't create a second subscription (a Checkout Session completes at most once).
   const now = Date.now()
   if (
     company.pending_checkout_session_id &&
@@ -285,8 +292,8 @@ export async function createCheckoutSession(): Promise<{ url: string }> {
     line_items: [{ price: priceId, quantity: 1 }],
     subscription_data: { metadata: { company_id: company.id } },
     metadata: { company_id: company.id },
-    success_url: `${appUrl}/billing?checkout=success`,
-    cancel_url: `${appUrl}/dashboard?checkout=canceled`,
+    success_url: redirects?.successUrl ?? `${appUrl}/billing?checkout=success`,
+    cancel_url: redirects?.cancelUrl ?? `${appUrl}/dashboard?checkout=canceled`,
   })
 
   if (!session.url) throw new Error('Stripe did not return a Checkout URL')
@@ -302,6 +309,43 @@ export async function createCheckoutSession(): Promise<{ url: string }> {
   if (holdError) throw new Error(holdError.message)
 
   return { url: session.url }
+}
+
+/**
+ * Client-facing: start checkout for the signed-in company's own account.
+ * Returns the hosted Checkout URL to redirect to.
+ */
+export async function createCheckoutSession(): Promise<{ url: string }> {
+  const company = await getCurrentCompany()
+  return startCheckoutForCompany(company)
+}
+
+/**
+ * Admin-facing: generate a hosted Stripe Checkout link for a specific client so
+ * an operator can key in a card the client provided (a MOTO/keyed-in payment —
+ * the digits go straight into Stripe's hosted page, never through this app).
+ * Reuses the exact single-flight core, so it cannot create a duplicate
+ * subscription. On completion the webhook activates the client automatically.
+ */
+export async function adminCreateCheckoutLink(
+  companyId: string
+): Promise<{ url: string }> {
+  await requireAdmin()
+
+  const admin = getAdminClient()
+  const { data, error } = await admin
+    .from('collision_companies')
+    .select('*')
+    .eq('id', companyId)
+    .single()
+  if (error || !data) throw new Error('Company not found')
+  const company = data as unknown as CollisionCompany
+
+  const appUrl = getAppUrl()
+  return startCheckoutForCompany(company, {
+    successUrl: `${appUrl}/admin/clients/${companyId}?checkout=success`,
+    cancelUrl: `${appUrl}/admin/clients/${companyId}?checkout=canceled`,
+  })
 }
 
 /**
