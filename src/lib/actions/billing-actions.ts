@@ -341,10 +341,13 @@ export async function adminCreateCheckoutLink(
   if (error || !data) throw new Error('Company not found')
   const company = data as unknown as CollisionCompany
 
+  // Land on the PUBLIC result page — the link may be completed by the operator
+  // OR forwarded to the client (who is not an admin, and may be logged out), so
+  // an /admin or /billing return would bounce them.
   const appUrl = getAppUrl()
   return startCheckoutForCompany(company, {
-    successUrl: `${appUrl}/admin/clients/${companyId}?checkout=success`,
-    cancelUrl: `${appUrl}/admin/clients/${companyId}?checkout=canceled`,
+    successUrl: `${appUrl}/checkout/complete?status=success`,
+    cancelUrl: `${appUrl}/checkout/complete?status=canceled`,
   })
 }
 
@@ -550,9 +553,15 @@ export async function adminSetClientPrice(
     prorated = true
   }
 
+  // Clear any in-flight checkout hold so a regenerated card-entry link mints a
+  // fresh session at the NEW price instead of reusing the old-priced one.
   const { error: updateError } = await admin
     .from('collision_companies')
-    .update({ monthly_price_cents: priceCents })
+    .update({
+      monthly_price_cents: priceCents,
+      pending_checkout_session_id: null,
+      pending_checkout_expires_at: null,
+    })
     .eq('id', companyId)
   if (updateError) throw new Error(updateError.message)
 

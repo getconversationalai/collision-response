@@ -13,7 +13,9 @@ function getAdminIds(): string[] {
 // which would otherwise be bounced to /login. That page renders the
 // set-password form only when a session exists, and the "request a fresh
 // link" state otherwise — so exposing it to anon traffic is safe.
-const PUBLIC_PREFIXES = ['/login', '/signup', '/apply', '/auth/confirm', '/set-password']
+// `/checkout/complete` is the post-Stripe landing page for admin-generated
+// card-entry links, which may be completed by an unauthenticated client.
+const PUBLIC_PREFIXES = ['/login', '/signup', '/apply', '/auth/confirm', '/set-password', '/checkout']
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + '/'))

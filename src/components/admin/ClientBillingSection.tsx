@@ -156,6 +156,7 @@ export default function ClientBillingSection({
   async function handleGenerateLink() {
     setError('')
     setLinkCopied(false)
+    setCheckoutLink('') // drop any prior link so a failed regenerate can't leave a stale one
     setGeneratingLink(true)
     try {
       const { url } = await adminCreateCheckoutLink(companyId)
