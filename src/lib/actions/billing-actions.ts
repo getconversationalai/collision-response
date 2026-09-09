@@ -16,6 +16,7 @@ import {
   isLiveSubscriptionStatus,
   selectCanonicalSubscription,
 } from '@/lib/billing/reconcile'
+import { dedupePaymentsByInvoice } from '@/lib/billing/payments'
 
 // How long a reused pending Checkout Session is considered valid before we
 // mint a fresh one. Stripe Checkout Sessions expire after ~24h; we reuse for a
@@ -412,7 +413,9 @@ async function loadBillingState(company: CollisionCompany): Promise<BillingState
     priceCents: effectivePriceCents(company, systemDefault),
     isPriceOverridden: company.monthly_price_cents !== null,
     hasStripeCustomer: company.stripe_customer_id !== null,
-    payments: (paymentsRes.data ?? []) as unknown as PaymentLog[],
+    payments: dedupePaymentsByInvoice(
+      (paymentsRes.data ?? []) as unknown as PaymentLog[]
+    ),
   }
 }
 
@@ -696,7 +699,9 @@ export async function adminGetClientBilling(
     lastPaymentFailedAt: company.last_payment_failed_at,
     stripeCustomerId: company.stripe_customer_id,
     stripeSubscriptionId: company.stripe_subscription_id,
-    payments: (paymentsRes.data ?? []) as unknown as PaymentLog[],
+    payments: dedupePaymentsByInvoice(
+      (paymentsRes.data ?? []) as unknown as PaymentLog[]
+    ),
   }
 }
 
