@@ -6,6 +6,7 @@ import type Stripe from 'stripe'
 import { getStripe, getStripeCryptoProvider } from '@/lib/stripe'
 import { getAdminClient } from '@/lib/supabase/admin'
 import { reconcileDuplicatesForCustomer } from '@/lib/billing/stripe-ops'
+import { unixSecondsToIso } from '@/lib/billing/time'
 import type { BillingStatus, PaymentStatus } from '@/lib/types'
 
 // Webhooks are always dynamic — never cache or pre-render this route.
@@ -88,7 +89,7 @@ async function handleEvent(stripe: Stripe, event: Stripe.Event) {
       await handleSubscriptionDeleted(admin, event)
       break
     case 'customer.subscription.updated':
-      await handleSubscriptionUpdated(admin, event)
+      await handleSubscriptionUpdated(stripe, admin, event)
       break
     default:
       // Not subscribed to other event types — ignore gracefully.
@@ -169,10 +170,6 @@ async function findCompanyBySubscription(
     throw new Error(`company lookup by subscription failed: ${error.message}`)
   }
   return (data as CompanyBillingRow | null) ?? null
-}
-
-function unixToIso(seconds: number): string {
-  return new Date(seconds * 1000).toISOString()
 }
 
 // ---------------------------------------------------------------------------
@@ -267,7 +264,7 @@ async function handleCheckoutCompleted(
   let currentPeriodEnd: string | null = null
   if (subscriptionId) {
     const subscription = await stripe.subscriptions.retrieve(subscriptionId)
-    currentPeriodEnd = unixToIso(subscription.current_period_end)
+    currentPeriodEnd = unixSecondsToIso(subscription.current_period_end)
   }
 
   const { error } = await admin
@@ -370,7 +367,7 @@ async function handleInvoicePaymentSucceeded(
   let currentPeriodEnd: string | null = null
   if (subscriptionId) {
     const subscription = await stripe.subscriptions.retrieve(subscriptionId)
-    currentPeriodEnd = unixToIso(subscription.current_period_end)
+    currentPeriodEnd = unixSecondsToIso(subscription.current_period_end)
   }
 
   const update: Record<string, string | boolean | null> = {
@@ -476,23 +473,43 @@ async function handleSubscriptionDeleted(admin: Admin, event: Stripe.Event) {
  * customer.subscription.updated — refresh period end; disable on a
  * canceled/unpaid status.
  */
-async function handleSubscriptionUpdated(admin: Admin, event: Stripe.Event) {
-  const subscription = event.data.object as Stripe.Subscription
-  const company = await findCompanyBySubscription(admin, subscription.id)
+async function handleSubscriptionUpdated(
+  stripe: Stripe,
+  admin: Admin,
+  event: Stripe.Event
+) {
+  const eventSub = event.data.object as Stripe.Subscription
+  const company = await findCompanyBySubscription(admin, eventSub.id)
   if (!company) return
 
   // Never let a winding-down subscription override a comped client.
   if (company.is_comped || company.billing_status === 'comped') return
 
-  const update: Record<string, string | boolean | null> = {
-    current_period_end: unixToIso(subscription.current_period_end),
+  // Read current_period_end from a FRESH retrieve via our pinned API version,
+  // NOT from the event payload: newer Stripe API versions ("basil", 2025+)
+  // moved current_period_end off the Subscription object onto its items, so the
+  // raw event's top-level field is undefined and would 500 the webhook. The
+  // pinned client (2024-06-20) still returns it on the object. Fail soft if the
+  // subscription can't be retrieved (e.g. already deleted).
+  let currentPeriodEnd: string | null = null
+  try {
+    const sub = await stripe.subscriptions.retrieve(eventSub.id)
+    currentPeriodEnd = unixSecondsToIso(sub.current_period_end)
+  } catch {
+    currentPeriodEnd = null
   }
 
-  if (subscription.status === 'canceled' || subscription.status === 'unpaid') {
+  const update: Record<string, string | boolean | null> = {}
+  if (currentPeriodEnd) update.current_period_end = currentPeriodEnd
+
+  if (eventSub.status === 'canceled' || eventSub.status === 'unpaid') {
     update.is_active = false
     update.billing_status =
-      subscription.status === 'canceled' ? 'canceled' : 'past_due'
+      eventSub.status === 'canceled' ? 'canceled' : 'past_due'
   }
+
+  // Nothing to change (period unresolved and status unchanged) → done.
+  if (Object.keys(update).length === 0) return
 
   const { error } = await admin
     .from('collision_companies')
